@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "hive_interfaces__rs",
+		"source" : "/home/charlie/ros2_ws/build/hive_interfaces/hive_interfaces__rs"
+	}
+}

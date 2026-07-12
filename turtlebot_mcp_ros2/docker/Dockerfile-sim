@@ -1,0 +1,38 @@
+# ============================================================================
+# TurtleBot3 Gazebo Simulation + Nav2 — self-contained image
+#
+# Everything comes from apt (no colcon build needed):
+#   - Gazebo 11 + gazebo_ros
+#   - turtlebot3_gazebo   (world + robot model)
+#   - turtlebot3_navigation2 + nav2 stack (incl. default turtlebot3 map)
+#   - CycloneDDS RMW — matches hive_api / robotstore containers
+#
+# Build:  make build_sim          (or docker build -f docker/Dockerfile-sim ...)
+# Run:    make run_sim            (X11 GUI: gzclient + RViz on your desktop)
+# ============================================================================
+FROM osrf/ros:humble-desktop
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=en_US.UTF-8
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-turtlebot3 \
+        ros-humble-turtlebot3-gazebo \
+        ros-humble-turtlebot3-navigation2 \
+        ros-humble-navigation2 \
+        ros-humble-nav2-bringup \
+        ros-humble-rmw-cyclonedds-cpp \
+        ros-humble-gazebo-ros-pkgs \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Defaults (all overridable via docker-compose environment) ────────────────
+ENV TURTLEBOT3_MODEL=burger \
+    RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
+    ROS_DOMAIN_ID=0
+
+WORKDIR /home/sim_ws
+
+COPY docker/entrypoint_sim.sh /home/sim_ws/entrypoint_sim.sh
+RUN chmod +x /home/sim_ws/entrypoint_sim.sh
+
+ENTRYPOINT ["/home/sim_ws/entrypoint_sim.sh"]

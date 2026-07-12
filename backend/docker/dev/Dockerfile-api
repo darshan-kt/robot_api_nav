@@ -1,0 +1,33 @@
+# Base: ROS 2 Humble (Ubuntu 22.04)
+# For arm
+# FROM althack/ros2:humble-full
+
+# For AMD
+FROM osrf/ros:humble-desktop
+
+SHELL ["/bin/bash", "-lc"]
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    WORKSPACE=/home/ros2_ws
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3-pip python3-venv git \
+      build-essential cmake \
+      python3-colcon-common-extensions \
+      ros-humble-ament-cmake \
+      ros-humble-rmw-cyclonedds-cpp \
+      ros-humble-cyclonedds \
+      ros-humble-rmw-fastrtps-cpp \
+      ros-humble-nav2-msgs \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --upgrade pip \
+ && python3 -m pip install fastapi "uvicorn[standard]"
+
+WORKDIR ${WORKSPACE}
+RUN mkdir -p ${WORKSPACE}/src
+
+EXPOSE 8080
+ENTRYPOINT ["bash", "/home/ros2_ws/entrypoint_api.sh"]

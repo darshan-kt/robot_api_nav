@@ -1,0 +1,21 @@
+<root BTCPP_format="4">
+  <BehaviorTree ID="GoToC"> 
+    <Sequence name="Root">
+      <!-- Pose & options come from blackboard keys set by runner.cpp -->
+      <SendNav2Goal name="send_nav2_goal_C"
+                    frame_id="{goal_frame}"
+                    lin.x="{goal_x}"
+                    lin.y="{goal_y}"
+                    ang.z="{goal_qz}"
+                    ang.w="{goal_qw}"
+                    speed="{speed}"
+                    priority="{priority}"
+                    goal_id="{nav_goal_id_C}"/>
+
+      <MonitorNav2Status name="wait_nav2_done_C"
+                         goal_id="{nav_goal_id_C}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+    </Sequence>
+  </BehaviorTree>
+</root>

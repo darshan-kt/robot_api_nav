@@ -1,0 +1,39 @@
+<root BTCPP_format="4">
+  <!-- 
+    This Behavior Tree is designed to be "Generic".
+    It does not contain hardcoded coordinates. Instead, it relies on
+    variables ({goal_x}, {req_speed}, etc.) that are placed on the 
+    Blackboard by the C++ Action Server (runner.cpp) before ticking.
+  -->
+  <BehaviorTree ID="GoToPose">
+    <Sequence name="GenericPoseSequence">
+      
+      <!-- 1. Apply Payload Configuration 
+           Reads 'req_speed' and 'req_priority' from Blackboard 
+           (parsed from JSON in runner.cpp) -->
+      <ApplyPayloadConfig speed="{req_speed}" 
+                          priority="{req_priority}"/>
+
+      <!-- 2. Send Goal to Nav2 
+           Reads full pose variables from Blackboard 
+           (mapped from ROS Goal in runner.cpp) -->
+      <SendNav2Goal name="send_generic_goal"
+                    x="{goal_x}" 
+                    y="{goal_y}" 
+                    z="{goal_z}"
+                    qx="{goal_qx}" 
+                    qy="{goal_qy}" 
+                    qz="{goal_qz}" 
+                    qw="{goal_qw}"
+                    frame_id="{goal_frame}"
+                    goal_id="{nav_uuid}"/>
+
+      <!-- 3. Wait for Action Completion 
+           Monitors the specific Goal UUID produced by the previous node -->
+      <MonitorNav2Status name="wait_nav2_done"
+                         goal_id="{nav_uuid}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+    </Sequence>
+  </BehaviorTree>
+</root>

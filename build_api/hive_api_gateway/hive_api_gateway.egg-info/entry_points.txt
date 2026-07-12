@@ -1,0 +1,3 @@
+[console_scripts]
+api = hive_api_gateway.main:main
+

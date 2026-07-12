@@ -1,0 +1,83 @@
+<!-- 
+  Example Behavior Tree: Sequential Navigation Route
+  
+  This tree navigates through 5 waypoints in sequence.
+  Each waypoint consists of:
+  1. SendNav2Goal - Sends the navigation goal to Nav2
+  2. MonitorNav2Status - Waits for the goal to complete
+  
+  Modify coordinates and yaw angles as needed for your use case.
+-->
+
+<root BTCPP_format="4">
+  <BehaviorTree ID="SequentialNavigation">
+    <Sequence name="NavigationSequence">
+
+      <!-- Waypoint 1 -->
+      <SendNav2Goal name="send_wp1"
+                    x="0.183" 
+                    y="-1.72" 
+                    yaw_deg="45.0" 
+                    frame_id="map"
+                    goal_id="{goal_id_1}"/>
+      
+      <MonitorNav2Status name="monitor_wp1"
+                         goal_id="{goal_id_1}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+
+      <!-- Waypoint 2 -->
+      <SendNav2Goal name="send_wp2"
+                    x="1.66" 
+                    y="-0.47" 
+                    yaw_deg="90.0" 
+                    frame_id="map"
+                    goal_id="{goal_id_2}"/>
+      
+      <MonitorNav2Status name="monitor_wp2"
+                         goal_id="{goal_id_2}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+
+      <!-- Waypoint 3 -->
+      <SendNav2Goal name="send_wp3"
+                    x="0.432" 
+                    y="1.76" 
+                    yaw_deg="0.0" 
+                    frame_id="map"
+                    goal_id="{goal_id_3}"/>
+      
+      <MonitorNav2Status name="monitor_wp3"
+                         goal_id="{goal_id_3}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+
+      <!-- Waypoint 4 -->
+      <SendNav2Goal name="send_wp4"
+                    x="-1.66" 
+                    y="0.37" 
+                    yaw_deg="90.0" 
+                    frame_id="map"
+                    goal_id="{goal_id_4}"/>
+      
+      <MonitorNav2Status name="monitor_wp4"
+                         goal_id="{goal_id_4}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+
+      <!-- Waypoint 5 (Return to start) -->
+      <SendNav2Goal name="send_wp5"
+                    x="-1.82" 
+                    y="-0.565" 
+                    yaw_deg="45.0" 
+                    frame_id="map"
+                    goal_id="{goal_id_5}"/>
+      
+      <MonitorNav2Status name="monitor_wp5"
+                         goal_id="{goal_id_5}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+
+    </Sequence>
+  </BehaviorTree>
+</root>

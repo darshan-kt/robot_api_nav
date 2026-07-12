@@ -1,0 +1,1 @@
+/home/ros2_ws/build_api/hive_interfaces/rosidl_generator_rs/hive_interfaces/rust/src/lib.rs

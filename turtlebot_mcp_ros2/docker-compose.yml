@@ -1,0 +1,43 @@
+services:
+
+  # ── TurtleBot3 Gazebo simulation + Nav2 ─────────────────────────────────────
+  # Build first:   make build_sim
+  # GUI needs X11: run `xhost +local:docker` once per login session.
+  turtlebot_sim:
+    image: turtlebot3_sim:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile-sim
+    container_name: turtlebot3-sim
+
+    # Host network is mandatory for ROS 2 DDS — same domain/vendor as
+    # hive_api-api and robotstore_cont-run containers.
+    network_mode: host
+
+    tty: true
+    stdin_open: true
+
+    environment:
+      - TURTLEBOT3_MODEL=burger
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - ROS_DOMAIN_ID=0
+      # Robot spawn pose — Gazebo spawn AND AMCL initial pose both use this,
+      # so RViz localization always matches the simulator.
+      - SPAWN_X=-2.0
+      - SPAWN_Y=-0.5
+      - SPAWN_YAW=0.0
+      # X11 GUI (gzclient + RViz render on the host display)
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+
+    # GPU acceleration for Gazebo/RViz rendering (Intel/AMD).
+    devices:
+      - /dev/dri:/dev/dri
+
+    # 'gui' (default) → Gazebo GUI + RViz | 'headless' → gzserver only, no RViz
+    command: gui
+
+    restart: unless-stopped

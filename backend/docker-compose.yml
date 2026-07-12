@@ -1,0 +1,47 @@
+services:
+  api:
+    image: ros2-fastapi:humble
+    container_name: ros2-fastapi-api
+    platform: linux/amd64
+    network_mode: "host"
+    tty: true
+    stdin_open: true
+    environment:
+      - ROS_DOMAIN_ID=0 
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - BUILD_BASE=/home/ros2_ws/build_api
+      - INSTALL_BASE=/home/ros2_ws/install_api
+      - LOG_BASE=/home/ros2_ws/log_api
+    volumes:
+      - ./hive_api_gateway:/home/ros2_ws/src/hive_api_gateway
+      - ./hive_interfaces:/home/ros2_ws/src/hive_interfaces
+      - ./docker/dev/entrypoint_api.sh:/home/ros2_ws/entrypoint_api.sh
+      - ./build_api:/home/ros2_ws/build_api
+      - ./install_api:/home/ros2_ws/install_api
+      - ./log_api:/home/ros2_ws/log_api
+    command: ["bash", "/home/ros2_ws/entrypoint_api.sh", "just"]
+
+  robotstore:
+    image: robotstore_image
+    container_name: robotstore_cont-run
+    platform: linux/amd64
+    network_mode: "host"
+    privileged: true
+    tty: true
+    stdin_open: true
+    environment:
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///home/charlie/ros2_ws/cyclonedds.xml
+    volumes:
+      - ./bt_runner:/home/charlie/ros2_ws/src/bt_runner
+      - ./bt_turtle_demo:/home/charlie/ros2_ws/src/bt_turtle_demo
+      - ./hive_bt_server:/home/charlie/ros2_ws/src/hive_bt_server
+      - ./hive_interfaces:/home/charlie/ros2_ws/src/hive_interfaces
+      - ./cyclonedds.xml:/home/charlie/ros2_ws/cyclonedds.xml
+      - ./docker:/home/charlie/ros2_ws/docker
+      - ./build:/home/charlie/ros2_ws/build
+      - ./install:/home/charlie/ros2_ws/install
+      - ./log:/home/charlie/ros2_ws/log
+      - ./docker/dev/entrypoint_robotstore.sh:/home/charlie/ros2_ws/entrypoint_robotstore.sh
+    command: ["bash", "/home/charlie/ros2_ws/entrypoint_robotstore.sh"]

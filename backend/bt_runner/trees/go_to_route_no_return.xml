@@ -1,0 +1,121 @@
+<!-- trees/go_route5.xml -->
+<root BTCPP_format="4">
+  <BehaviorTree ID="GoRoute5">
+    <Sequence name="Route5_Sequence">
+
+      <!-- pt1: (-0.565, -3.14) -->
+      <SendNav2Goal name="send_pt1"
+                    x="-0.784" y="-3.05" yaw_deg="45.0" frame_id="map"
+                    goal_id="{nav_goal_id_1}"/>
+      <MonitorNav2Status name="wait_pt1"
+                         goal_id="{nav_goal_id_1}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+              
+
+      <!-- pt2: (-1.53, -5.15) -->
+      <SendNav2Goal name="send_pt2"
+                    x="-2.5" y="-9.12" yaw_deg="90.0" frame_id="map"
+                    goal_id="{nav_goal_id_2}"/>
+      <MonitorNav2Status name="wait_pt2"
+                         goal_id="{nav_goal_id_2}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+
+      <!-- pt3: (-2.4, -8.05) -->
+      <SendNav2Goal name="send_pt3"
+                    x="-4.25" y="-16.6" yaw_deg="0.0" frame_id="map"
+                    goal_id="{nav_goal_id_3}"/>
+      <MonitorNav2Status name="wait_pt3"
+                         goal_id="{nav_goal_id_3}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+
+      <!-- pt4: (-3.02, -10.4) -->
+      <SendNav2Goal name="send_pt4"
+                    x="-8.08" y="-16.8" yaw_deg="90.0" frame_id="map"
+                    goal_id="{nav_goal_id_4}"/>
+      <MonitorNav2Status name="wait_pt4"
+                         goal_id="{nav_goal_id_4}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+
+      <!-- pt5: (-1.53, -5.15) -->
+      <SendNav2Goal name="send_pt5"
+                    x="-0.784" y="-3.05" yaw_deg="45.0" frame_id="map"
+                    goal_id="{nav_goal_id_5}"/>
+      <MonitorNav2Status name="wait_pt5"
+                         goal_id="{nav_goal_id_5}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+
+    </Sequence>
+  </BehaviorTree>
+</root>
+
+
+
+
+
+
+
+
+<!-- trees/go_route5.xml -->
+<!-- <root BTCPP_format="4">
+  <BehaviorTree ID="GoRoute5">
+    <Sequence name="Route5_Sequence">
+
+      
+      <SendNav2Goal name="send_pt1"
+                    x="-0.565" y="-3.14" yaw_deg="0.0" frame_id="map"
+                    goal_id="{nav_goal_id_1}"/>
+      <MonitorNav2Status name="wait_pt1"
+                         goal_id="{nav_goal_id_1}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+      <Wait name="pause_after_pt1" msec="2000"/>
+
+      
+      <SendNav2Goal name="send_pt2"
+                    x="-1.53" y="-5.15" yaw_deg="0.0" frame_id="map"
+                    goal_id="{nav_goal_id_2}"/>
+      <MonitorNav2Status name="wait_pt2"
+                         goal_id="{nav_goal_id_2}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+      <Wait name="pause_after_pt2" msec="2000"/>
+
+     
+      <SendNav2Goal name="send_pt3"
+                    x="-2.4" y="-8.05" yaw_deg="0.0" frame_id="map"
+                    goal_id="{nav_goal_id_3}"/>
+      <MonitorNav2Status name="wait_pt3"
+                         goal_id="{nav_goal_id_3}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+      <Wait name="pause_after_pt3" msec="2000"/>
+
+     
+      <SendNav2Goal name="send_pt4"
+                    x="-3.02" y="-10.4" yaw_deg="0.0" frame_id="map"
+                    goal_id="{nav_goal_id_4}"/>
+      <MonitorNav2Status name="wait_pt4"
+                         goal_id="{nav_goal_id_4}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+      <Wait name="pause_after_pt4" msec="2000"/>
+
+  
+      <SendNav2Goal name="send_pt5"
+                    x="-1.53" y="-5.15" yaw_deg="0.0" frame_id="map"
+                    goal_id="{nav_goal_id_5}"/>
+      <MonitorNav2Status name="wait_pt5"
+                         goal_id="{nav_goal_id_5}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+      <Wait name="pause_after_pt5" msec="2000"/>
+
+    </Sequence>
+  </BehaviorTree>
+</root>
+ -->

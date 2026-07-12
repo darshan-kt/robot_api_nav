@@ -1,0 +1,85 @@
+<root BTCPP_format="4">
+  <!--
+    go_to_waypoints.xml — Generic Multi-Waypoint Behavior Tree
+    ============================================================
+    This tree is driven ENTIRELY by the blackboard. No hardcoded coordinates.
+
+    The runner.cpp injects a JSON waypoints array into the blackboard key
+    "waypoints_json", e.g.:
+      [
+        {"x":1.0,"y":2.0,"z":0.0,"qx":0,"qy":0,"qz":0,"qw":1,"frame":"map"},
+        {"x":3.0,"y":4.0,"z":0.0,"qx":0,"qy":0,"qz":0,"qw":1,"frame":"map"}
+      ]
+
+    The IterateWaypoints node reads that array and, on each tick cycle,
+    sets wp_x / wp_y / wp_z / wp_qx / wp_qy / wp_qz / wp_qw / wp_frame
+    onto the blackboard for the child sequence to consume.
+
+    Flow per waypoint:
+      1. ApplyPayloadConfig  — apply speed/priority from JSON payload (once per wp)
+      2. SendNav2Goal        — fire the Nav2 NavigateToPose action, capture UUID
+      3. MonitorNav2Status   — block until that UUID reaches SUCCESS / FAILURE
+      4. Wait                — optional inter-waypoint pause (default 500 ms)
+  -->
+  <BehaviorTree ID="GoToWaypoints">
+
+    <Sequence name="MultiWaypointRoot">
+
+      <!-- 
+        Apply global payload config once before starting the route.
+        req_speed / req_priority are injected by runner.cpp from JSON payload.
+      -->
+      <ApplyPayloadConfig name="apply_global_config"
+                          speed="{req_speed}"
+                          priority="{req_priority}"/>
+
+      <!--
+        IterateWaypoints loops over the "waypoints_json" blackboard array.
+        On each iteration it writes the current waypoint fields to the BB
+        and then ticks its child subtree.  Returns SUCCESS when all
+        waypoints have been visited, FAILURE if any waypoint fails.
+      -->
+      <IterateWaypoints name="waypoint_loop"
+                        waypoints_json="{waypoints_json}"
+                        current_index="{wp_index}"
+                        total_count="{wp_total}"
+                        out_x="{wp_x}"
+                        out_y="{wp_y}"
+                        out_z="{wp_z}"
+                        out_qx="{wp_qx}"
+                        out_qy="{wp_qy}"
+                        out_qz="{wp_qz}"
+                        out_qw="{wp_qw}"
+                        out_frame="{wp_frame}">
+
+        <!-- Child sequence executed once per waypoint -->
+        <Sequence name="SingleWaypointSequence">
+
+          <!-- Send current waypoint coordinates to Nav2 -->
+          <SendNav2Goal name="send_waypoint_goal"
+                        x="{wp_x}"
+                        y="{wp_y}"
+                        z="{wp_z}"
+                        qx="{wp_qx}"
+                        qy="{wp_qy}"
+                        qz="{wp_qz}"
+                        qw="{wp_qw}"
+                        frame_id="{wp_frame}"
+                        goal_id="{wp_nav_uuid}"/>
+
+          <!-- Wait until Nav2 reaches this waypoint -->
+          <MonitorNav2Status name="wait_waypoint_done"
+                             goal_id="{wp_nav_uuid}"
+                             timeout_ms="600000"
+                             status_topic="/navigate_to_pose/_action/status"/>
+
+          <!-- Brief pause between waypoints (configurable via BB key wp_pause_ms) -->
+          <Wait name="inter_waypoint_pause"
+                msec="{wp_pause_ms}"/>
+
+        </Sequence>
+      </IterateWaypoints>
+
+    </Sequence>
+  </BehaviorTree>
+</root>

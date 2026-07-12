@@ -1,0 +1,17 @@
+<!-- trees/go_to_a.xml -->
+<root BTCPP_format="4">
+  <BehaviorTree ID="GoToA">
+    <Sequence name="Root">
+      <!-- Send a Nav2 goal and capture its UUID into {nav_goal_id} -->
+      <SendNav2Goal name="send_nav2_goal"
+                    x="6.0" y="0.0" yaw_deg="0.0" frame_id="map"
+                    goal_id="{nav_goal_id}"/>
+
+      <!-- Monitor Nav2's status stream for that UUID until success/failure -->
+      <MonitorNav2Status name="wait_nav2_done"
+                         goal_id="{nav_goal_id}"
+                         timeout_ms="600000"
+                         status_topic="/navigate_to_pose/_action/status"/>
+    </Sequence>
+  </BehaviorTree>
+</root>

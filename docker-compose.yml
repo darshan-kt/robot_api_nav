@@ -1,0 +1,99 @@
+services:
+
+  # ── React / Vite frontend ────────────────────────────────────────────────────
+  appstore:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: robot_appstore
+    ports:
+      - "5174:5174"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  # ── ROS 2 API gateway (backend/hive_api_gateway) ────────────────────────────
+  # Pre-build image + workspace first:  make build_hive_api
+  hive_api:
+    image: hive_api:latest
+    container_name: hive_api-api
+
+    # Host network is mandatory for ROS 2 DDS multicast discovery.
+    # The gateway listens on host port 1717 — no 'ports:' mapping needed.
+    network_mode: host
+
+    tty: true
+    stdin_open: true
+
+    environment:
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - BUILD_BASE=/home/ros2_ws/build_api
+      - INSTALL_BASE=/home/ros2_ws/install_api
+      - LOG_BASE=/home/ros2_ws/log_api
+      - ROBOT_MAP_DIR=/robot_map   # map.pgm served by GET /api/map
+
+    volumes:
+      # Package sources
+      - ./backend/hive_api_gateway:/home/ros2_ws/src/hive_api_gateway
+      - ./backend/hive_interfaces:/home/ros2_ws/src/hive_interfaces
+      # Entrypoint
+      - ./backend/docker/dev/entrypoint_api.sh:/home/ros2_ws/entrypoint_api.sh
+      # colcon build artifacts (persisted on host)
+      - ./build_api:/home/ros2_ws/build_api
+      - ./install_api:/home/ros2_ws/install_api
+      - ./log_api:/home/ros2_ws/log_api
+      # Operational map (read-only) — served by GET /api/map
+      - ./map:/robot_map:ro
+
+    # 'just' mode: skip colcon build, source pre-built overlay, launch node
+    command: bash /home/ros2_ws/entrypoint_api.sh just
+
+    restart: unless-stopped
+
+  # ── RobotStore: hive_bt_server + bt_runner (backend/) ───────────────────────
+  # Pre-build image + workspace first:  make build_robotstore
+  robotstore:
+    image: robotstore_image
+    container_name: robotstore_cont-run
+
+    # Host network mandatory for DDS; privileged for hardware/serial access
+    network_mode: host
+    privileged: true
+
+    tty: true
+    stdin_open: true
+
+    environment:
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///home/charlie/ros2_ws/cyclonedds.xml
+      - BUILD_BASE=/home/charlie/ros2_ws/build
+      - INSTALL_BASE=/home/charlie/ros2_ws/install
+      - LOG_BASE=/home/charlie/ros2_ws/log
+
+    volumes:
+      # ROS 2 package sources
+      - ./backend/bt_runner:/home/charlie/ros2_ws/src/bt_runner
+      - ./backend/hive_bt_server:/home/charlie/ros2_ws/src/hive_bt_server
+      - ./backend/hive_interfaces:/home/charlie/ros2_ws/src/hive_interfaces
+      # CycloneDDS config
+      - ./backend/cyclonedds.xml:/home/charlie/ros2_ws/cyclonedds.xml
+      # Entrypoint + docker helpers
+      - ./backend/docker:/home/charlie/ros2_ws/docker
+      - ./backend/docker/dev/entrypoint_robotstore.sh:/home/charlie/ros2_ws/entrypoint_robotstore.sh
+      # colcon build artifacts (pre-built — skip rebuilding every start)
+      - ./backend/build:/home/charlie/ros2_ws/build
+      - ./backend/install:/home/charlie/ros2_ws/install
+      - ./backend/log:/home/charlie/ros2_ws/log
+
+    # Entrypoint sources the workspace and runs:
+    #   ros2 launch bt_runner hive_server_runner.launch.py
+    command: bash /home/charlie/ros2_ws/entrypoint_robotstore.sh
+
+    restart: unless-stopped

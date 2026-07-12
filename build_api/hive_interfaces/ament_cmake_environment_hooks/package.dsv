@@ -1,0 +1,4 @@
+source;share/hive_interfaces/local_setup.bash
+source;share/hive_interfaces/local_setup.dsv
+source;share/hive_interfaces/local_setup.sh
+source;share/hive_interfaces/local_setup.zsh
