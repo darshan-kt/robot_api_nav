@@ -11,7 +11,7 @@ from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 from nav2_msgs.action import NavigateToPose, NavigateThroughPoses
 from hive_interfaces.action import ExecuteBehavior
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
-from nav_msgs.msg import OccupancyGrid, Odometry
+from nav_msgs.msg import OccupancyGrid, Odometry, Path as NavPath
 from sensor_msgs.msg import LaserScan
 from PIL import Image
 import uvicorn
@@ -204,6 +204,14 @@ class ApiNode(Node):
             _amcl_qos,
         )
 
+        # ── Global planner path subscriber (/plan → /api/plan WebSocket) ────────
+        # Nav2's planner_server publishes nav_msgs/Path (RELIABLE + VOLATILE)
+        # on every (re)plan while a navigation goal is active.
+        self._latest_plan = None
+        self._plan_time   = 0.0
+        self._plan_lock   = threading.Lock()
+        self.create_subscription(NavPath, '/plan', self._plan_cb, 10)
+
         # ── Robot-alive heartbeat subscribers ───────────────────────────────────
         # BEST_EFFORT + VOLATILE is compatible with any publisher QoS.
         # We only record the timestamp; no message data is parsed.
@@ -265,6 +273,32 @@ class ApiNode(Node):
             if age > 10.0:
                 return None  # consider stale
             return {**self._latest_pose, "age_s": round(age, 2)}
+
+    def _plan_cb(self, msg: NavPath):
+        """Cache the latest global planner path, downsampled to ≤400 points."""
+        n = len(msg.poses)
+        stride = max(1, n // 400)
+        points = [
+            {"x": round(p.pose.position.x, 3), "y": round(p.pose.position.y, 3)}
+            for p in msg.poses[::stride]
+        ]
+        # Always keep the exact final pose so the drawn path reaches the goal
+        if n > 0 and stride > 1:
+            last = msg.poses[-1].pose.position
+            points.append({"x": round(last.x, 3), "y": round(last.y, 3)})
+        with self._plan_lock:
+            self._latest_plan = {"frame_id": msg.header.frame_id, "points": points}
+            self._plan_time   = time.monotonic()
+
+    def get_plan(self) -> dict | None:
+        """Return latest path, or None if stale (>15 s — navigation finished)."""
+        with self._plan_lock:
+            if self._latest_plan is None:
+                return None
+            age = time.monotonic() - self._plan_time
+            if age > 15.0:
+                return None
+            return {**self._latest_plan, "age_s": round(age, 2)}
 
     def _costmap_cb(self, msg: OccupancyGrid):
         with self._alive_lock:
@@ -826,6 +860,33 @@ async def localisation_ws(ws: WebSocket):
                         "age_s":    loc["age_s"],
                     })
             await asyncio.sleep(0.2)   # 5 Hz — AMCL publishes on motion
+    except (WebSocketDisconnect, Exception):
+        pass
+
+
+@api_app.websocket("/api/plan")
+async def plan_ws(ws: WebSocket):
+    """
+    Push the Nav2 global planner path (/plan) to the frontend at 2 Hz.
+
+    Frame sent every 500 ms:
+        {"type": "plan", "frame_id": "map", "age_s": 0.4,
+         "points": [{"x": 1.23, "y": -0.45}, ...]}
+
+    An empty "points" array means no active plan (navigation idle or the
+    last plan went stale) — the frontend clears the drawn path.
+    """
+    await ws.accept()
+    try:
+        while True:
+            if _ros_ready and _node:
+                plan = _node.get_plan()
+                if plan:
+                    await ws.send_json({"type": "plan", **plan})
+                else:
+                    await ws.send_json({"type": "plan", "frame_id": "map",
+                                        "age_s": None, "points": []})
+            await asyncio.sleep(0.5)   # 2 Hz — planner replans ~1 Hz
     except (WebSocketDisconnect, Exception):
         pass
 

@@ -187,6 +187,7 @@ cd ~/appstore/turtlebot_mcp_ros2 && make stop
 | `/api/telemetry` | WS | `/odom` pose at 10 Hz — `{x, y, theta}` |
 | `/api/scan` | WS | `/scan` LaserScan at 1 Hz (drives the Scan Observation panel) |
 | `/api/localisation` | WS | `/amcl_pose` at 5 Hz — `{x, y, yaw, frame_id, age_s}` (drives the GPS marker) |
+| `/api/plan` | WS | Nav2 global planner `/plan` at 2 Hz — `{points: [{x, y}, ...]}` (drives the live path overlay; empty = idle) |
 
 ---
 

@@ -9,6 +9,7 @@ import type { MapData, Waypoint } from '../types';
 import { useTelemetry } from '../hooks/useTelemetry';
 import { useScan } from '../hooks/useScan';
 import { useLocalisation } from '../hooks/useLocalisation';
+import { usePlan } from '../hooks/usePlan';
 import { parsePgmToDataUrl } from '../lib/pgmParser';
 import { GATEWAY_URL } from '../lib/config';
 
@@ -18,6 +19,7 @@ export function SimpleRoutePlannerPage() {
     const { connected, robotState } = useTelemetry();
     const { connected: scanConnected, scan } = useScan();
     const { localisation } = useLocalisation();
+    const { plan } = usePlan();
     const scanCanvasRef = useRef<HTMLCanvasElement>(null);
 
     // Draw polar scan plot whenever scan data updates
@@ -255,18 +257,40 @@ const [isUploading, setIsUploading] = useState(false);
                 ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke();
             }
 
-            // Draw paths
-            if (waypoints.length > 1) {
+            // Nav2 global planner path (/plan) — the robot's REAL planned trajectory.
+            // Waypoints are intentionally NOT connected to each other; only the
+            // planner's computed path is drawn.
+            if (plan && plan.points.length > 1 && mapImage) {
+                const scale = Math.min(canvas.width / mapImage.width, canvas.height / mapImage.height);
+                const drawX = (canvas.width / 2) - (mapImage.width / 2) * scale;
+                const drawY = (canvas.height / 2) - (mapImage.height / 2) * scale;
+
+                const toCanvas = (p: { x: number; y: number }) => ({
+                    cx: drawX + ((p.x - mapMeta.origin_x) / mapMeta.resolution) * scale,
+                    cy: drawY + ((mapImage.height - 1) - (p.y - mapMeta.origin_y) / mapMeta.resolution) * scale,
+                });
+
                 ctx.beginPath();
-                ctx.moveTo(waypoints[0].x, waypoints[0].y);
-                for (let i = 1; i < waypoints.length; i++) {
-                    ctx.lineTo(waypoints[i].x, waypoints[i].y);
+                const first = toCanvas(plan.points[0]);
+                ctx.moveTo(first.cx, first.cy);
+                for (let i = 1; i < plan.points.length; i++) {
+                    const pt = toCanvas(plan.points[i]);
+                    ctx.lineTo(pt.cx, pt.cy);
                 }
-                ctx.strokeStyle = '#fbbf24'; // amber-400
-                ctx.lineWidth = 2;
-                ctx.setLineDash([8, 6]);
+                // Glow pass
+                ctx.strokeStyle = 'rgba(16, 185, 129, 0.25)';   // emerald glow
+                ctx.lineWidth = 7;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.stroke();
+                // Core pass — animated dashes flowing toward the goal
+                ctx.strokeStyle = 'rgba(16, 185, 129, 0.95)';
+                ctx.lineWidth = 2.5;
+                ctx.setLineDash([10, 8]);
+                ctx.lineDashOffset = -((Date.now() / 40) % 18);
                 ctx.stroke();
                 ctx.setLineDash([]);
+                ctx.lineDashOffset = 0;
             }
 
             // Draw Waypoint nodes
@@ -475,7 +499,7 @@ const [isUploading, setIsUploading] = useState(false);
             frameId = requestAnimationFrame(loop);
         });
         return () => cancelAnimationFrame(frameId);
-    }, [waypoints, mapImage, pendingWaypoint, mousePos, robotState, localisation, mapMeta]);
+    }, [waypoints, mapImage, pendingWaypoint, mousePos, robotState, localisation, plan, mapMeta]);
 
     // Handle telemetry complete mission states
     useEffect(() => {
