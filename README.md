@@ -9,7 +9,8 @@ Gazebo simulation for development.
   AMCL localisation in real time
 - **Dashboard** – live telemetry and system status
 - **Emergency Stop** – one-click software stop (cancels navigation, forces zero twist)
-- **Remote Controller** – keyboard/joystick teleop with LIDAR HUD
+- **Remote Controller** – keyboard/joystick teleop with live LIDAR HUD
+  (design & teleop strategy: [docs/RemoteController.md](docs/RemoteController.md))
 
 ---
 
@@ -188,6 +189,7 @@ cd ~/appstore/turtlebot_mcp_ros2 && make stop
 | `/api/scan` | WS | `/scan` LaserScan at 1 Hz (drives the Scan Observation panel) |
 | `/api/localisation` | WS | `/amcl_pose` at 5 Hz — `{x, y, yaw, frame_id, age_s}` (drives the GPS marker) |
 | `/api/plan` | WS | Nav2 global planner `/plan` at 2 Hz — `{points: [{x, y}, ...]}` (drives the live path overlay; empty = idle) |
+| `/api/velocity_ctrl` | WS | Teleop: client streams `{type: "cmd_vel", linear, angular}` at 10 Hz while driving → published as `geometry_msgs/Twist` on `/cmd_vel`. One zero frame on release; 400 ms deadman zeros the robot if the stream dies |
 
 ---
 
@@ -232,8 +234,10 @@ Robot spawn pose is set in the sim `docker-compose.yml` (`SPAWN_X`, `SPAWN_Y`,
 3. **Gateway Python changes** hot-apply on container restart
    (`docker restart hive_api-api`) because the source is volume-mounted.
    **C++ / BT XML changes** need `make build_robotstore`.
-4. **AMCL publishes on motion.** The GPS marker fades if the robot sits still
-   >10 s (staleness filter) and reappears on movement.
+4. **AMCL publishes on motion.** `/amcl_pose` goes quiet while the robot is
+   stationary — that's normal. The gateway keeps streaming the last known pose
+   (with `age_s` for freshness), so the GPS marker is always visible once AMCL
+   has localized, even before any mission is sent.
 5. **Verify layers with probes, not lists.** `ros2 action list` proves
    discovery, not delivery. Use `ros2 action send_goal` / `ros2 topic echo --once`
    to prove a connection actually works.

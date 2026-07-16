@@ -10,7 +10,7 @@ from rclpy.action import ActionClient
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 from nav2_msgs.action import NavigateToPose, NavigateThroughPoses
 from hive_interfaces.action import ExecuteBehavior
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from nav_msgs.msg import OccupancyGrid, Odometry, Path as NavPath
 from sensor_msgs.msg import LaserScan
 from PIL import Image
@@ -186,6 +186,9 @@ class ApiNode(Node):
         self.nav_client              = ActionClient(self, NavigateToPose,        '/navigate_to_pose')
         self.nav_through_client      = ActionClient(self, NavigateThroughPoses, '/navigate_through_poses')
 
+        # ── Teleop velocity publisher (/api/velocity_ctrl → /cmd_vel) ───────────
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+
         # ── Localization subscriber (/amcl_pose → used by /localization endpoint) ──
         self._latest_pose      = None
         self._latest_pose_time = 0.0
@@ -265,13 +268,17 @@ class ApiNode(Node):
             self._latest_pose_time = time.monotonic()
 
     def get_localization(self) -> dict | None:
-        """Return latest pose or None if stale (>10 s) or never received."""
+        """
+        Return the last known AMCL pose, or None only if never received.
+
+        No staleness cutoff: AMCL only republishes /amcl_pose on motion or
+        re-initialisation, so a stationary robot's last pose IS its current
+        pose. age_s is included so clients can show freshness if they want.
+        """
         with self._pose_lock:
             if self._latest_pose is None:
                 return None
             age = time.monotonic() - self._latest_pose_time
-            if age > 10.0:
-                return None  # consider stale
             return {**self._latest_pose, "age_s": round(age, 2)}
 
     def _plan_cb(self, msg: NavPath):
@@ -299,6 +306,13 @@ class ApiNode(Node):
             if age > 15.0:
                 return None
             return {**self._latest_plan, "age_s": round(age, 2)}
+
+    def publish_cmd_vel(self, linear_x: float, angular_z: float):
+        """Publish one geometry_msgs/Twist on /cmd_vel (not latched)."""
+        msg = Twist()
+        msg.linear.x  = float(linear_x)
+        msg.angular.z = float(angular_z)
+        self.cmd_vel_pub.publish(msg)
 
     def _costmap_cb(self, msg: OccupancyGrid):
         with self._alive_lock:
@@ -739,7 +753,7 @@ async def get_localization():
 
     loc = _node.get_localization()
     if loc is None:
-        return {"available": False, "reason": "No localization data (topic silent or stale)"}
+        return {"available": False, "reason": "No localization data received yet on /amcl_pose"}
 
     pos = loc["position"]
     ori = loc["orientation"]
@@ -862,6 +876,66 @@ async def localisation_ws(ws: WebSocket):
             await asyncio.sleep(0.2)   # 5 Hz — AMCL publishes on motion
     except (WebSocketDisconnect, Exception):
         pass
+
+
+# Teleop safety limits — commands are clamped to these regardless of what
+# the client asks for (matches the UI's slider maximums: 0.8 m/s, 1.0 rad/s).
+_TELEOP_MAX_LINEAR  = 0.8   # m/s
+_TELEOP_MAX_ANGULAR = 1.0   # rad/s
+
+
+@api_app.websocket("/api/velocity_ctrl")
+async def velocity_ctrl_ws(ws: WebSocket):
+    """
+    Teleoperation channel: frontend → /cmd_vel (geometry_msgs/Twist).
+
+    Protocol (client → server), sent at ~10 Hz ONLY while an input is active:
+        {"type": "cmd_vel", "linear": <m/s>, "angular": <rad/s>}
+    On release the client sends ONE final all-zero frame and then goes quiet.
+    Nothing is latched: exactly one Twist is published per frame received.
+
+    Safety:
+      * Values are clamped to _TELEOP_MAX_LINEAR / _TELEOP_MAX_ANGULAR.
+      * Deadman watchdog — if the last published command was non-zero and no
+        frame arrives within 400 ms (browser crash, tab closed, network drop),
+        a single zero Twist is published so the robot cannot run away.
+      * On disconnect, a final zero Twist is published if the robot was moving.
+    """
+    await ws.accept()
+    moving = False   # last published command was non-zero
+    try:
+        while True:
+            try:
+                raw = await asyncio.wait_for(ws.receive_text(), timeout=0.4)
+            except asyncio.TimeoutError:
+                # Stream went quiet mid-drive without a zero frame → stop once
+                if moving and _ros_ready and _node:
+                    _node.publish_cmd_vel(0.0, 0.0)
+                    moving = False
+                continue
+
+            try:
+                data = json.loads(raw)
+            except ValueError:
+                continue
+            if data.get("type") != "cmd_vel":
+                continue
+
+            lin = max(-_TELEOP_MAX_LINEAR,  min(_TELEOP_MAX_LINEAR,  float(data.get("linear",  0.0))))
+            ang = max(-_TELEOP_MAX_ANGULAR, min(_TELEOP_MAX_ANGULAR, float(data.get("angular", 0.0))))
+
+            if _ros_ready and _node:
+                _node.publish_cmd_vel(lin, ang)
+                moving = (lin != 0.0 or ang != 0.0)
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        # Client vanished while driving → make sure the robot stops
+        if moving and _ros_ready and _node:
+            try:
+                _node.publish_cmd_vel(0.0, 0.0)
+            except Exception:
+                pass
 
 
 @api_app.websocket("/api/plan")

@@ -59,7 +59,23 @@ export function DashboardPage() {
         if (!robot) return;
         try {
             // Parse numeric fields if necessary
-            const numericFields = ['max_speed', 'obstacle_distance'];
+            const numericFields = ['max_speed', 'max_linear_speed', 'max_turn_rate', 'obstacle_distance'];
+
+            // Teleop limits are range-bound (matches the Remote Controller sliders)
+            if (key === 'max_linear_speed') {
+                const v = parseFloat(editValue);
+                if (isNaN(v) || v < 0.1 || v > 0.8) {
+                    showToast('MAX LINEAR SPEED must be between 0.1 and 0.8 m/s', 'error');
+                    return;
+                }
+            }
+            if (key === 'max_turn_rate') {
+                const v = parseFloat(editValue);
+                if (isNaN(v) || v < 0.1 || v > 1.0) {
+                    showToast('MAX TURN RATE must be between 0.1 and 1.0 rad/s', 'error');
+                    return;
+                }
+            }
             const valueToSave = numericFields.includes(key) ? parseFloat(editValue) : editValue;
 
             if (numericFields.includes(key) && isNaN(valueToSave as number)) {
@@ -78,7 +94,7 @@ export function DashboardPage() {
     };
 
     const TABS = ['Robot Info', 'Sensors', 'Configuration', 'System'];
-    const CONFIG_KEYS = ['max_speed', 'obstacle_distance', 'navigation_mode', 'localization_method', 'path_planner', 'recovery_behavior'];
+    const CONFIG_KEYS = ['max_speed', 'max_linear_speed', 'max_turn_rate', 'obstacle_distance', 'navigation_mode', 'localization_method', 'path_planner', 'recovery_behavior'];
 
     return (
         <div className="min-h-screen bg-background text-text flex flex-col">

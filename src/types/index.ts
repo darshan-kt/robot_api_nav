@@ -11,6 +11,8 @@ export interface Robot {
     uptime_hours: number;
     last_mission: string;
     max_speed: number;
+    max_linear_speed: number;   // teleop limit, m/s   (0.1 – 0.8)
+    max_turn_rate: number;      // teleop limit, rad/s (0.1 – 1.0)
     obstacle_distance: number;
     navigation_mode: string;
     localization_method: string;

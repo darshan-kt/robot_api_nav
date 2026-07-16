@@ -3,26 +3,44 @@ import { Smartphone, ShieldAlert, Home, BatteryCharging, ArrowUp, ArrowDown } fr
 import { Header } from '../components/layout/Header';
 import { Card, Badge, Button } from '../components/ui/Layout';
 import { useToast } from '../components/ui/Toast';
-
-interface RadarObstacle {
-    angle: number;  // in radians
-    distance: number; // in pixels from center
-    baseX: number;
-    baseY: number;
-    intensity: number;
-}
+import { localDb } from '../lib/localDb';
+import { useScan } from '../hooks/useScan';
+import { useVelocityCtrl } from '../hooks/useVelocityCtrl';
+import { GATEWAY_URL } from '../lib/config';
 
 export function RemoteControllerPage() {
     const { showToast } = useToast();
-    
+
+    // Live LIDAR stream (/api/scan WebSocket — same source as Scan Observation)
+    const { connected: scanConnected, scan } = useScan();
+    const scanRef = useRef(scan);
+    scanRef.current = scan;
+    const lidarLive = scanConnected && scan !== null;
+
+    // Teleop command channel (/api/velocity_ctrl WebSocket → ROS /cmd_vel)
+    const { connected: ctrlConnected, sendVelocity } = useVelocityCtrl();
+
     // Connection State
     const [connected, setConnected] = useState(false);
     const [latency, setLatency] = useState<number | null>(null);
     const [robotState, setRobotState] = useState<{ x: number; y: number; theta: number; battery: number; status: string } | null>(null);
 
-    // Driving Parameters
-    const [maxLinearSpeed, setMaxLinearSpeed] = useState(1.5); // m/s
-    const [maxAngularSpeed, setMaxAngularSpeed] = useState(2.0); // rad/s
+    // Driving Parameters — defaults come from the Dashboard Configuration tab
+    // (max_linear_speed / max_turn_rate on the robot record), bounded 0.1–0.8 / 0.1–1.0
+    const [maxLinearSpeed, setMaxLinearSpeed] = useState(0.5); // m/s
+    const [maxAngularSpeed, setMaxAngularSpeed] = useState(1.0); // rad/s
+
+    useEffect(() => {
+        localDb.getRobot().then(robot => {
+            if (!robot) return;
+            if (typeof robot.max_linear_speed === 'number') {
+                setMaxLinearSpeed(Math.min(0.8, Math.max(0.1, robot.max_linear_speed)));
+            }
+            if (typeof robot.max_turn_rate === 'number') {
+                setMaxAngularSpeed(Math.min(1.0, Math.max(0.1, robot.max_turn_rate)));
+            }
+        }).catch(() => {});
+    }, []);
     
     // Active velocities
     const [linearVel, setLinearVel] = useState(0);
@@ -48,50 +66,27 @@ export function RemoteControllerPage() {
     const [isDragging, setIsDragging] = useState(false);
     const [joystickPos, setJoystickPos] = useState({ x: 0, y: 0 });
 
-    // Radar Obstacles state
-    const obstaclesRef = useRef<RadarObstacle[]>([]);
-
-    // Initialize random obstacles for radar HUD
+    // Teleoperation transmit loop — 10 Hz, NOT latched:
+    //   * while any input is active (non-zero velocity): stream frames
+    //   * on release: send exactly ONE final all-zero frame, then go quiet
+    //   * quiet while idle — nothing is sent until the user drives again
+    const wasDrivingRef = useRef(false);
     useEffect(() => {
-        const list: RadarObstacle[] = [];
-        for (let i = 0; i < 22; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const distance = 80 + Math.random() * 140;
-            list.push({
-                angle,
-                distance,
-                baseX: Math.cos(angle) * distance,
-                baseY: Math.sin(angle) * distance,
-                intensity: 0.3 + Math.random() * 0.7
-            });
-        }
-        obstaclesRef.current = list;
-    }, []);
-
-    // Teleoperation transmit loop (sends vel commands to FastAPI every 100ms when connected)
-    const sendTeleopCommand = useCallback((linear: number, angular: number) => {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({
-                type: 'teleop',
-                linear,
-                angular
-            }));
-        }
-    }, []);
-
-    useEffect(() => {
-        // Run control loop at 10Hz
         teleopIntervalRef.current = window.setInterval(() => {
-            if (connected) {
-                // If keyboard or joystick driving, send the values
-                sendTeleopCommand(linearVel, angularVel);
+            const driving = linearVel !== 0 || angularVel !== 0;
+            if (driving) {
+                sendVelocity(linearVel, angularVel);
+                wasDrivingRef.current = true;
+            } else if (wasDrivingRef.current) {
+                sendVelocity(0, 0);            // single stop frame on release
+                wasDrivingRef.current = false;
             }
         }, 100);
 
         return () => {
             if (teleopIntervalRef.current) clearInterval(teleopIntervalRef.current);
         };
-    }, [connected, linearVel, angularVel, sendTeleopCommand]);
+    }, [linearVel, angularVel, sendVelocity]);
 
     // WebSocket Telemetry Connection
     useEffect(() => {
@@ -100,7 +95,7 @@ export function RemoteControllerPage() {
         let reconnectTimeout: number;
 
         const connect = () => {
-            ws = new WebSocket('ws://localhost:8000/api/telemetry');
+            ws = new WebSocket(GATEWAY_URL.replace(/^http/, 'ws') + '/api/telemetry');
             wsRef.current = ws;
 
             ws.onopen = () => {
@@ -158,44 +153,47 @@ export function RemoteControllerPage() {
         };
     }, [showToast]);
 
+    // Shared key→velocity mapping (ROS conventions — REP 103, CCW-positive yaw):
+    //   W → linear.x  = +MAX_LINEAR_SPEED   (forward)
+    //   S → linear.x  = -MAX_LINEAR_SPEED   (reverse)
+    //   A → angular.z = +MAX_TURN_RATE      (turn left)
+    //   D → angular.z = -MAX_TURN_RATE      (turn right)
+    // Used by BOTH the physical keyboard and the clickable on-screen keys.
+    const updateVelocityFromKeys = useCallback((keys: { [key: string]: boolean }) => {
+        let linear = 0;
+        if (keys.w || keys.ArrowUp) linear = maxLinearSpeed;
+        else if (keys.s || keys.ArrowDown) linear = -maxLinearSpeed;
+
+        let angular = 0;
+        if (keys.a || keys.ArrowLeft) angular = maxAngularSpeed;
+        else if (keys.d || keys.ArrowRight) angular = -maxAngularSpeed;
+
+        setLinearVel(linear);
+        setAngularVel(angular);
+    }, [maxLinearSpeed, maxAngularSpeed]);
+
+    // Press/release a virtual or physical key
+    const setKeyState = useCallback((key: string, pressed: boolean) => {
+        setKeysPressed(prev => {
+            const next = { ...prev, [key]: pressed };
+            updateVelocityFromKeys(next);
+            return next;
+        });
+    }, [updateVelocityFromKeys]);
+
     // Keyboard Driving Event Handlers
     useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-                // Prevent page scrolling on arrow keys
-                if (e.key.startsWith('Arrow')) e.preventDefault();
+        const KEYS = ['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 
-                setKeysPressed(prev => {
-                    const next = { ...prev, [e.key]: true };
-                    updateVelocityFromKeys(next);
-                    return next;
-                });
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (KEYS.includes(e.key)) {
+                if (e.key.startsWith('Arrow')) e.preventDefault();
+                setKeyState(e.key, true);
             }
         };
 
         const handleKeyUp = (e: KeyboardEvent) => {
-            if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-                setKeysPressed(prev => {
-                    const next = { ...prev, [e.key]: false };
-                    updateVelocityFromKeys(next);
-                    return next;
-                });
-            }
-        };
-
-        const updateVelocityFromKeys = (keys: typeof keysPressed) => {
-            // Forward/backward
-            let linear = 0;
-            if (keys.w || keys.ArrowUp) linear = maxLinearSpeed;
-            else if (keys.s || keys.ArrowDown) linear = -maxLinearSpeed;
-
-            // Rotation
-            let angular = 0;
-            if (keys.a || keys.ArrowLeft) angular = maxAngularSpeed; // Turn Left
-            else if (keys.d || keys.ArrowRight) angular = -maxAngularSpeed; // Turn Right
-
-            setLinearVel(linear);
-            setAngularVel(angular);
+            if (KEYS.includes(e.key)) setKeyState(e.key, false);
         };
 
         window.addEventListener('keydown', handleKeyDown);
@@ -205,7 +203,7 @@ export function RemoteControllerPage() {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [maxLinearSpeed, maxAngularSpeed]);
+    }, [setKeyState]);
 
     // Handle virtual joystick drag inputs
     const handleJoystickStart = () => {
@@ -246,13 +244,60 @@ export function RemoteControllerPage() {
 
         setJoystickPos({ x: rx, y: ry });
 
-        // Translate position to linear (Y axis) and angular (X axis) speed ratios
-        // Note: Y coordinates are inverted (going up should be positive speed)
-        const lRatio = -(ry / maxDist);
-        const aRatio = -(rx / maxDist); // turning left is positive in ROS
+        // ── Sector-based command mapping (ROS conventions, yaw CCW-positive) ──
+        // Joystick angle in degrees, math convention: 0°=right, 90°=front(up),
+        // 180°=left, 270°=back. Screen Y is inverted, hence -ry.
+        //
+        //   FRONT  (90°±10°)  → linear.x = +MAX_LINEAR   (like W)
+        //   BACK   (270°±10°) → linear.x = -MAX_LINEAR   (like S — reverse)
+        //   LEFT   (180°±10°) → angular.z = +MAX_TURN (rotate left in place)
+        //   RIGHT  (0°±10°)   → angular.z = -MAX_TURN (rotate right in place)
+        //   FRONT-RIGHT (10°–80°)   → +0.5·MAX_LINEAR, -0.5·MAX_TURN
+        //   FRONT-LEFT  (100°–170°) → +0.5·MAX_LINEAR, +0.5·MAX_TURN
+        //   BACK-LEFT   (190°–260°) → -0.5·MAX_LINEAR, -0.5·MAX_TURN
+        //   BACK-RIGHT  (280°–350°) → -0.5·MAX_LINEAR, +0.5·MAX_TURN
+        //   (reverse diagonals mirror like teleop_twist_keyboard: stick toward
+        //    back-left drives the robot backward-left on screen)
+        //   Deadzone: <25 % stick travel → no command
+        const dist2 = Math.sqrt(rx * rx + ry * ry);
+        const mag = dist2 / maxDist;
 
-        setLinearVel(lRatio * maxLinearSpeed);
-        setAngularVel(aRatio * maxAngularSpeed);
+        let linear = 0;
+        let angular = 0;
+
+        if (mag >= 0.25) {
+            const angDeg = ((Math.atan2(-ry, rx) * 180 / Math.PI) + 360) % 360;
+            const within = (center: number, tol: number) => {
+                let d = Math.abs(angDeg - center);
+                if (d > 180) d = 360 - d;
+                return d <= tol;
+            };
+
+            if (within(90, 10)) {                        // FRONT
+                linear = maxLinearSpeed;
+            } else if (within(270, 10)) {                // BACK → reverse
+                linear = -maxLinearSpeed;
+            } else if (within(180, 10)) {                // LEFT
+                angular = maxAngularSpeed;
+            } else if (within(0, 10)) {                  // RIGHT
+                angular = -maxAngularSpeed;
+            } else if (angDeg > 10 && angDeg < 80) {     // FRONT-RIGHT
+                linear = 0.5 * maxLinearSpeed;
+                angular = -0.5 * maxAngularSpeed;
+            } else if (angDeg > 100 && angDeg < 170) {   // FRONT-LEFT
+                linear = 0.5 * maxLinearSpeed;
+                angular = 0.5 * maxAngularSpeed;
+            } else if (angDeg > 190 && angDeg < 260) {   // BACK-LEFT
+                linear = -0.5 * maxLinearSpeed;
+                angular = -0.5 * maxAngularSpeed;
+            } else {                                     // BACK-RIGHT (280°–350°)
+                linear = -0.5 * maxLinearSpeed;
+                angular = 0.5 * maxAngularSpeed;
+            }
+        }
+
+        setLinearVel(linear);
+        setAngularVel(angular);
     }, [isDragging, maxLinearSpeed, maxAngularSpeed]);
 
     const handleJoystickEnd = useCallback(() => {
@@ -260,9 +305,10 @@ export function RemoteControllerPage() {
         setJoystickPos({ x: 0, y: 0 });
         setLinearVel(0);
         setAngularVel(0);
-        // Send a final zero-velocity message immediately
-        sendTeleopCommand(0, 0);
-    }, [sendTeleopCommand]);
+        // Send the final zero immediately (don't wait for the 10 Hz tick)
+        sendVelocity(0, 0);
+        wasDrivingRef.current = false;
+    }, [sendVelocity]);
 
     useEffect(() => {
         if (isDragging) {
@@ -280,7 +326,9 @@ export function RemoteControllerPage() {
         };
     }, [isDragging, handleJoystickMove, handleJoystickEnd]);
 
-    // Simulated Radar HUD Canvas Rendering Loop
+    // Live LIDAR HUD Canvas Rendering Loop — draws real /scan data.
+    // Robot at centre, forward = up. ROS scan angles are CCW-positive with
+    // 0 = robot forward, so: dx = -sin(a)*r, dy = -cos(a)*r.
     useEffect(() => {
         const canvas = radarCanvasRef.current;
         if (!canvas) return;
@@ -296,13 +344,22 @@ export function RemoteControllerPage() {
             const cy = canvas.height / 2;
             const maxR = canvas.width / 2 - 10;
 
-            // Background circular grid lines
+            const s = scanRef.current;
+            // metres → pixels: fit the lidar's max range inside the dial
+            const displayMaxM = s ? Math.min(s.range_max, 5.0) : 4.0;
+            const ppm = maxR / displayMaxM;
+
+            // Background range rings with metre labels
             ctx.strokeStyle = 'rgba(16, 185, 129, 0.1)';
+            ctx.fillStyle = 'rgba(16, 185, 129, 0.35)';
+            ctx.font = '9px monospace';
+            ctx.textAlign = 'left';
             ctx.lineWidth = 1;
-            for (let r = 50; r <= maxR; r += 50) {
+            for (let m = 1; m <= displayMaxM; m++) {
                 ctx.beginPath();
-                ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                ctx.arc(cx, cy, m * ppm, 0, Math.PI * 2);
                 ctx.stroke();
+                ctx.fillText(`${m}m`, cx + 3, cy - m * ppm + 10);
             }
 
             // Crosshair lines
@@ -311,42 +368,11 @@ export function RemoteControllerPage() {
             ctx.moveTo(cx, cy - maxR); ctx.lineTo(cx, cy + maxR);
             ctx.stroke();
 
-            // Dynamic updates for radar obstacles based on driving speeds (LIDAR emulation)
-            const dt = 0.033; // 30fps
-            obstaclesRef.current.forEach(obs => {
-                // If robot is driving forward, obstacles move backward (down on screen relative to center)
-                if (linearVel !== 0) {
-                    obs.baseY += linearVel * dt * 50.0;
-                }
-                if (angularVel !== 0) {
-                    const rotAngle = -angularVel * dt; // Turn opposite to robot
-                    const cosA = Math.cos(rotAngle);
-                    const sinA = Math.sin(rotAngle);
-                    const rx = obs.baseX * cosA - obs.baseY * sinA;
-                    const ry = obs.baseX * sinA + obs.baseY * cosA;
-                    obs.baseX = rx;
-                    obs.baseY = ry;
-                }
-
-                // Recalculate distance and angle
-                obs.distance = Math.sqrt(obs.baseX * obs.baseX + obs.baseY * obs.baseY);
-                obs.angle = Math.atan2(obs.baseY, obs.baseX);
-
-                // Recycle obstacles that drift out of bounds
-                if (obs.distance > maxR || obs.distance < 10) {
-                    obs.angle = Math.random() * Math.PI * 2;
-                    obs.distance = maxR - 5;
-                    obs.baseX = Math.cos(obs.angle) * obs.distance;
-                    obs.baseY = Math.sin(obs.angle) * obs.distance;
-                }
-            });
-
-            // Draw Sweep Beam
+            // Sweep beam (cosmetic)
             sweepAngle = (sweepAngle + 0.04) % (Math.PI * 2);
             const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR);
             grad.addColorStop(0, 'rgba(16, 185, 129, 0.05)');
             grad.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
-
             ctx.fillStyle = grad;
             ctx.beginPath();
             ctx.moveTo(cx, cy);
@@ -355,7 +381,6 @@ export function RemoteControllerPage() {
             ctx.closePath();
             ctx.fill();
 
-            // Draw Sweep Line
             ctx.beginPath();
             ctx.moveTo(cx, cy);
             ctx.lineTo(cx + Math.cos(sweepAngle) * maxR, cy + Math.sin(sweepAngle) * maxR);
@@ -363,29 +388,38 @@ export function RemoteControllerPage() {
             ctx.lineWidth = 1.5;
             ctx.stroke();
 
-            // Draw obstacle pings with decay glow
-            obstaclesRef.current.forEach(obs => {
-                const angleDiff = Math.abs(obs.angle - sweepAngle);
-                let alpha = 0.15;
-                if (angleDiff < 0.3) {
-                    alpha = 0.8 - (angleDiff / 0.3) * 0.6;
+            // Real LIDAR returns
+            if (s && s.ranges.length > 0) {
+                for (let i = 0; i < s.ranges.length; i++) {
+                    const r = s.ranges[i];
+                    if (r === null || r < s.range_min) continue;
+                    const rPx = r * ppm;
+                    if (rPx > maxR) continue;
+
+                    const a = s.angle_min + i * s.angle_increment;
+                    const ox = cx - Math.sin(a) * rPx;
+                    const oy = cy - Math.cos(a) * rPx;
+
+                    // Beams near the sweep line glow brighter
+                    const screenAngle = Math.atan2(oy - cy, ox - cx);
+                    let diff = Math.abs(screenAngle - sweepAngle) % (Math.PI * 2);
+                    if (diff > Math.PI) diff = Math.PI * 2 - diff;
+                    const alpha = diff < 0.5 ? 0.95 - (diff / 0.5) * 0.5 : 0.45;
+
+                    ctx.beginPath();
+                    ctx.arc(ox, oy, 2.2, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(244, 63, 94, ${alpha})`;
+                    ctx.fill();
                 }
+            } else {
+                // No data — show a hint in the dial
+                ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
+                ctx.font = '11px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('WAITING FOR /scan …', cx, cy + maxR / 2);
+            }
 
-                const ox = cx + obs.baseX;
-                const oy = cy + obs.baseY;
-
-                ctx.beginPath();
-                ctx.arc(ox, oy, 8, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(244, 63, 94, ${alpha * 0.3})`; // Rose transparent
-                ctx.fill();
-
-                ctx.beginPath();
-                ctx.arc(ox, oy, 3.5, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(244, 63, 94, ${alpha})`;
-                ctx.fill();
-            });
-
-            // Draw Robot Center Node Indicator
+            // Robot centre node
             ctx.beginPath();
             ctx.arc(cx, cy, 7, 0, Math.PI * 2);
             ctx.fillStyle = '#10b981';
@@ -394,7 +428,7 @@ export function RemoteControllerPage() {
             ctx.lineWidth = 1.5;
             ctx.stroke();
 
-            // Forward direction indicator arrow on center node
+            // Forward direction indicator arrow
             ctx.beginPath();
             ctx.moveTo(cx, cy - 12);
             ctx.lineTo(cx - 5, cy - 7);
@@ -411,7 +445,7 @@ export function RemoteControllerPage() {
         return () => {
             cancelAnimationFrame(frameId);
         };
-    }, [linearVel, angularVel]);
+    }, []);
 
     // Handle Lift manual operations
     const handleRaiseLift = () => {
@@ -452,15 +486,35 @@ export function RemoteControllerPage() {
 
     const triggerEStop = () => {
         showToast('EMERGENCY SOFTWARE SHUTDOWN ENGAGED.', 'error');
-        sendTeleopCommand(0, 0);
+        sendVelocity(0, 0);
         setLinearVel(0);
         setAngularVel(0);
+        wasDrivingRef.current = false;
     };
 
     const isW = keysPressed.w || keysPressed.ArrowUp;
     const isA = keysPressed.a || keysPressed.ArrowLeft;
     const isS = keysPressed.s || keysPressed.ArrowDown;
     const isD = keysPressed.d || keysPressed.ArrowRight;
+
+    // Clickable on-screen key tile — press-and-hold drives, release stops
+    const KeyTile = ({ k, active }: { k: 'w' | 'a' | 's' | 'd'; active: boolean }) => (
+        <button
+            onMouseDown={() => setKeyState(k, true)}
+            onMouseUp={() => setKeyState(k, false)}
+            onMouseLeave={() => { if (keysPressed[k]) setKeyState(k, false); }}
+            onTouchStart={(e) => { e.preventDefault(); setKeyState(k, true); }}
+            onTouchEnd={(e) => { e.preventDefault(); setKeyState(k, false); }}
+            onContextMenu={(e) => e.preventDefault()}
+            className={`w-10 h-10 rounded-lg flex items-center justify-center border font-bold text-xs transition-all select-none cursor-pointer ${
+                active
+                    ? 'bg-emerald-500 text-background border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)] scale-95'
+                    : 'bg-surface border-border text-textMuted hover:border-emerald-500/50 hover:text-text active:scale-95'
+            }`}
+        >
+            {k.toUpperCase()}
+        </button>
+    );
 
     return (
         <div className="min-h-screen bg-background relative isolate flex flex-col">
@@ -486,9 +540,12 @@ export function RemoteControllerPage() {
                                 </p>
                             </div>
                             <div className="flex gap-2">
-                                <Badge type={connected ? 'emerald' : 'rose'}>
-                                    {connected ? 'LINK OK' : 'BRIDGE OFFLINE'}
-                                </Badge>
+                                <div className={`animate-pulse flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide ${
+                                    lidarLive ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-rose-500/20 border-rose-500/50 text-rose-400'
+                                }`}>
+                                    <div className={`w-1.5 h-1.5 rounded-full ${lidarLive ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                                    {lidarLive ? 'LIDAR LIVE' : 'BRIDGE OFFLINE'}
+                                </div>
                                 {latency !== null && (
                                     <Badge type="blue">{latency} ms</Badge>
                                 )}
@@ -499,10 +556,10 @@ export function RemoteControllerPage() {
                         <div className="relative w-full max-w-[420px] aspect-square rounded-full border border-emerald-500/20 bg-black/40 shadow-inner flex items-center justify-center p-2 mb-4">
                             <canvas ref={radarCanvasRef} width={400} height={400} className="w-full h-full rounded-full" />
                             <div className="absolute bottom-6 left-6 font-mono text-[9px] text-emerald-400 bg-emerald-950/40 px-2.5 py-1.5 rounded-lg border border-emerald-500/20">
-                                SCAN: 360° AUTO
+                                {scan ? `${scan.ranges.filter(r => r !== null).length}/${scan.ranges.length} BEAMS` : 'SCAN: — '}
                             </div>
                             <div className="absolute bottom-6 right-6 font-mono text-[9px] text-emerald-400 bg-emerald-950/40 px-2.5 py-1.5 rounded-lg border border-emerald-500/20">
-                                GAIN: +12dB
+                                {scan ? `RANGE: ${scan.range_max.toFixed(1)}m` : 'RANGE: —'}
                             </div>
                         </div>
 
@@ -533,9 +590,9 @@ export function RemoteControllerPage() {
                                 </div>
                                 <input
                                     type="range"
-                                    min="0.2"
-                                    max="3.0"
-                                    step="0.1"
+                                    min="0.1"
+                                    max="0.8"
+                                    step="0.05"
                                     value={maxLinearSpeed}
                                     onChange={(e) => setMaxLinearSpeed(parseFloat(e.target.value))}
                                     className="w-full accent-emerald-500 bg-black/40 h-1.5 rounded-lg appearance-none cursor-pointer border border-white/5"
@@ -549,9 +606,9 @@ export function RemoteControllerPage() {
                                 </div>
                                 <input
                                     type="range"
-                                    min="0.5"
-                                    max="4.0"
-                                    step="0.1"
+                                    min="0.1"
+                                    max="1.0"
+                                    step="0.05"
                                     value={maxAngularSpeed}
                                     onChange={(e) => setMaxAngularSpeed(parseFloat(e.target.value))}
                                     className="w-full accent-emerald-500 bg-black/40 h-1.5 rounded-lg appearance-none cursor-pointer border border-white/5"
@@ -562,7 +619,13 @@ export function RemoteControllerPage() {
 
                     {/* Dual Driving Controllers (Keyboard WASD visual + Virtual Joystick) */}
                     <Card hover={false} className="p-6 flex flex-col gap-6 items-center">
-                        <h3 className="text-xs font-mono font-bold uppercase tracking-widest text-textMuted w-full align-left">Steering Interface</h3>
+                        <div className="w-full flex items-center justify-between">
+                            <h3 className="text-xs font-mono font-bold uppercase tracking-widest text-textMuted">Steering Interface</h3>
+                            <div className={`flex items-center gap-1.5 text-[9px] font-mono font-bold ${ctrlConnected ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                <div className={`w-1.5 h-1.5 rounded-full ${ctrlConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+                                {ctrlConnected ? 'CTRL LINK' : 'CTRL OFFLINE'}
+                            </div>
+                        </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-[340px] md:max-w-none items-center justify-center">
                             {/* Visual WASD Keyboard */}
@@ -570,31 +633,15 @@ export function RemoteControllerPage() {
                                 <span className="text-[10px] font-mono text-textMuted uppercase mb-4">Keyboard teleop</span>
                                 
                                 <div className="space-y-2">
-                                    {/* W key */}
+                                    {/* W key — forward */}
                                     <div className="flex justify-center">
-                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center border font-bold text-xs transition-all ${
-                                            isW ? 'bg-emerald-500 text-background border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)] scale-95' : 'bg-surface border-border text-textMuted'
-                                        }`}>
-                                            W
-                                        </div>
+                                        <KeyTile k="w" active={isW} />
                                     </div>
-                                    {/* ASD keys */}
+                                    {/* A / S / D — left, reverse, right */}
                                     <div className="flex gap-2 justify-center">
-                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center border font-bold text-xs transition-all ${
-                                            isA ? 'bg-emerald-500 text-background border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)] scale-95' : 'bg-surface border-border text-textMuted'
-                                        }`}>
-                                            A
-                                        </div>
-                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center border font-bold text-xs transition-all ${
-                                            isS ? 'bg-emerald-500 text-background border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)] scale-95' : 'bg-surface border-border text-textMuted'
-                                        }`}>
-                                            S
-                                        </div>
-                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center border font-bold text-xs transition-all ${
-                                            isD ? 'bg-emerald-500 text-background border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)] scale-95' : 'bg-surface border-border text-textMuted'
-                                        }`}>
-                                            D
-                                        </div>
+                                        <KeyTile k="a" active={isA} />
+                                        <KeyTile k="s" active={isS} />
+                                        <KeyTile k="d" active={isD} />
                                     </div>
                                 </div>
                             </div>

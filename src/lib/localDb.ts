@@ -77,6 +77,8 @@ export const localDb = {
         uptime_hours: 120,
         last_mission: '',
         max_speed: 1.5,
+        max_linear_speed: 0.5,
+        max_turn_rate: 1.0,
         obstacle_distance: 0.5,
         navigation_mode: 'autonomous',
         localization_method: 'amcl',
@@ -87,6 +89,11 @@ export const localDb = {
       };
       await setStoreArray('robots', [defaultRobot]);
       return defaultRobot;
+    }
+    // Backfill teleop limits on robots stored before these fields existed
+    if (robots[0].max_linear_speed === undefined || robots[0].max_turn_rate === undefined) {
+      robots[0] = { max_linear_speed: 0.5, max_turn_rate: 1.0, ...robots[0] };
+      await setStoreArray('robots', robots);
     }
     return robots[0];
   },
