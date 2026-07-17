@@ -802,7 +802,7 @@ const [isUploading, setIsUploading] = useState(false);
                         {/* Path Manifest Sidebar */}
                         <div className="flex flex-col gap-6">
                             {/* Live Telemetry Panel */}
-                            <Card hover={false} className="p-6 border border-border/50 bg-[#111827]/40 backdrop-blur-md rounded-2xl flex flex-col gap-4">
+                            <Card hover={false} className="p-6 border border-border/50 bg-surface/40 backdrop-blur-md rounded-2xl flex flex-col gap-4">
                                 <div className="flex items-center justify-between">
                                     <h3 className="text-xs font-mono font-bold uppercase tracking-widest text-textMuted">
                                         LIVE TELEMETRY

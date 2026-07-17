@@ -20,6 +20,36 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  /* Living aurora background — fixed layer that slowly drifts and cycles hue
+     (teal → cyan → violet → emerald) behind all content on every page. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: -10%;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      radial-gradient(1100px 750px at 85% -10%, rgba(45, 212, 191, 0.16), transparent 60%),
+      radial-gradient(950px 700px at -10% 25%, rgba(16, 185, 129, 0.13), transparent 60%),
+      radial-gradient(850px 600px at 50% 115%, rgba(56, 189, 248, 0.13), transparent 60%),
+      radial-gradient(700px 500px at 55% 40%, rgba(139, 92, 246, 0.07), transparent 65%);
+    animation: aurora-drift 36s ease-in-out infinite alternate;
+    will-change: filter, transform;
+  }
+
+  @keyframes aurora-drift {
+    0%   { filter: hue-rotate(0deg);   transform: translate3d(0, 0, 0) scale(1); }
+    35%  { filter: hue-rotate(40deg);  transform: translate3d(-2%, 1.5%, 0) scale(1.05); }
+    70%  { filter: hue-rotate(-35deg); transform: translate3d(2%, -1.5%, 0) scale(1.08); }
+    100% { filter: hue-rotate(25deg);  transform: translate3d(-1%, 1%, 0) scale(1.03); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    body::before {
+      animation: none;
+    }
+  }
+
   :focus-visible {
     @apply outline-none ring-2 ring-emerald-400 ring-offset-2 ring-offset-background;
   }
@@ -130,6 +160,148 @@
   .table-container {
     @apply w-full overflow-x-auto;
   }
+
+  /* ── AppStore hub (“Mission Deck”) ──────────────────────────────────── */
+
+  /* Tron-style perspective grid floor, scrolling toward the viewer */
+  .hub-grid-floor {
+    position: absolute;
+    left: -20%;
+    right: -20%;
+    bottom: -4%;
+    height: 46vh;
+    background-image:
+      linear-gradient(rgba(0, 229, 160, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 229, 160, 0.08) 1px, transparent 1px);
+    background-size: 44px 44px;
+    transform: perspective(620px) rotateX(62deg);
+    transform-origin: bottom;
+    animation: grid-scroll 2.8s linear infinite;
+    -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.7) 20%, transparent 85%);
+    mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.7) 20%, transparent 85%);
+    pointer-events: none;
+  }
+
+  @keyframes grid-scroll {
+    from { background-position-y: 0; }
+    to   { background-position-y: 44px; }
+  }
+
+  /* Flowing multi-hue headline */
+  .hub-headline {
+    background-image: linear-gradient(100deg,
+      #34d399, #a78bfa, #fb7185, #fbbf24, #34d399);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: gradient-pan 9s linear infinite;
+  }
+
+  @keyframes gradient-pan {
+    to { background-position: 300% 0; }
+  }
+
+  .hub-cursor {
+    animation: cursor-blink 1.1s steps(1) infinite;
+  }
+
+  @keyframes cursor-blink {
+    50% { opacity: 0; }
+  }
+
+  /* Infinite status ticker (content duplicated once, shifts -50%) */
+  .hub-ticker {
+    animation: ticker 30s linear infinite;
+  }
+
+  .hub-ticker:hover {
+    animation-play-state: paused;
+  }
+
+  @keyframes ticker {
+    to { transform: translateX(-50%); }
+  }
+
+  /* Interactive app card: 3D tilt + cursor spotlight + border beam.
+     --glow is an RGB triplet set per card theme. */
+  .hub-card {
+    transform-style: preserve-3d;
+    will-change: transform;
+    transition:
+      transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 0.3s ease,
+      box-shadow 0.3s ease;
+  }
+
+  .hub-card:hover {
+    box-shadow: 0 28px 70px -28px rgb(var(--glow) / 0.4);
+  }
+
+  .hub-spotlight {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%),
+      rgb(var(--glow) / 0.15), transparent 65%);
+  }
+
+  .hub-card:hover .hub-spotlight {
+    opacity: 1;
+  }
+
+  /* Rotating conic highlight, masked to a 1px border ring */
+  .hub-beam-wrap {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+    pointer-events: none;
+    overflow: hidden;
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+  }
+
+  .hub-card:hover .hub-beam-wrap {
+    opacity: 1;
+  }
+
+  .hub-beam {
+    position: absolute;
+    inset: -40%;
+    background: conic-gradient(from 0deg,
+      transparent 0% 68%, rgb(var(--glow) / 0.9) 82%, transparent 96%);
+    animation: spin-slow 3.4s linear infinite;
+  }
+
+  /* Ambient floating motes */
+  .hub-float {
+    animation: float-y var(--dur, 7s) ease-in-out infinite alternate;
+  }
+
+  @keyframes float-y {
+    from { transform: translateY(0);     opacity: 0.15; }
+    to   { transform: translateY(-28px); opacity: 0.6; }
+  }
+
+  /* Respect users who prefer less motion */
+  @media (prefers-reduced-motion: reduce) {
+    .hub-grid-floor,
+    .hub-ticker,
+    .hub-beam,
+    .hub-float,
+    .hub-headline,
+    .hub-cursor {
+      animation: none !important;
+    }
+  }
 }
 
 /* Custom Scrollbar */
@@ -148,5 +320,5 @@
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2a3550 #0a0e17;
+  scrollbar-color: #2b4d58 #0a1b20;
 }

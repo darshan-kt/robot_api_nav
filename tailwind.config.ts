@@ -5,10 +5,10 @@ const config: Config = {
     theme: {
         extend: {
             colors: {
-                background: '#0a0e17',
-                surface: '#111827',
-                card: '#151d2e',
-                border: '#2a3550',
+                background: '#0a1b20',   // deep ocean teal
+                surface: '#102830',
+                card: '#132e38',
+                border: '#2b4d58',
                 accent: '#00e5a0',
                 info: '#38bdf8',
                 warning: '#ffb020',
