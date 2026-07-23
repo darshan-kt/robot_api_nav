@@ -1,9 +1,8 @@
 # Base: ROS 2 Humble (Ubuntu 22.04)
-# For arm
-# FROM althack/ros2:humble-full
-
-# For AMD
-FROM osrf/ros:humble-desktop
+# Multi-arch image (linux/amd64 + linux/arm64) — buildx picks the right
+# manifest automatically, so this same Dockerfile builds for Raspberry Pi 5
+# (arm64) and desktop dev machines (amd64) without edits.
+FROM ros:humble-ros-base
 
 SHELL ["/bin/bash", "-lc"]
 

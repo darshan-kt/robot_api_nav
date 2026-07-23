@@ -2,16 +2,47 @@
 # Makefile – RoboStore Appstore
 # =============================================================================
 
+# ── Host architecture auto-detect ─────────────────────────────────────────────
+# Every build target resolves its target platform from a PLATFORM* var, which
+# defaults to the machine's own arch: linux/amd64 on a dev box, linux/arm64
+# natively on a Raspberry Pi 5 — no manual arch switch needed, `make build`
+# just does the right thing on whichever machine it runs on. Override on the
+# command line to cross-build under QEMU (requires buildx + qemu binfmt — see
+# README), e.g.:
+#   make build_image_api PLATFORM=linux/arm64
+#
+# Image tags and standalone container names are suffixed with the resolved
+# arch (…:amd64 / …:arm64, name-amd64 / name-arm64) so an amd64 build and an
+# arm64 build of the same image/container can coexist on one machine without
+# clobbering each other — this matters when cross-building/testing arm64 on
+# an amd64 dev host, and is a no-op in normal single-arch use since only one
+# tag ever gets built/run there.
+UNAME_M := $(shell uname -m)
+ifeq ($(UNAME_M),x86_64)
+  HOST_PLATFORM := linux/amd64
+else ifeq ($(UNAME_M),aarch64)
+  HOST_PLATFORM := linux/arm64
+else ifeq ($(UNAME_M),arm64)
+  HOST_PLATFORM := linux/arm64
+else
+  HOST_PLATFORM := linux/amd64
+endif
+ARCH := $(subst linux/,,$(HOST_PLATFORM))
+
 # ── API image config ──────────────────────────────────────────────────────────
-IMAGE        ?= hive_api:latest
-CONTAINER    ?= hive_api
+PLATFORM     ?= $(HOST_PLATFORM)
+ARCH_API     := $(subst linux/,,$(PLATFORM))
+IMAGE        ?= hive_api:$(ARCH_API)
+CONTAINER    ?= hive_api-$(ARCH_API)
 PORT         ?= 1717
 WORKSPACE    ?= /home/ros2_ws
 DOCKERFILE   ?= backend/docker/dev/Dockerfile-api
-PLATFORM     ?= linux/amd64
 
 # ── ROS config ────────────────────────────────────────────────────────────────
 ROS_DOMAIN_ID ?= 0
+
+
+
 
 # ── Backend source tree (all ROS 2 packages live here) ────────────────────────
 BACKEND_DIR     ?= $(PWD)/backend
@@ -22,15 +53,18 @@ API_ENTRYPOINT  ?= $(BACKEND_DIR)/docker/dev/entrypoint_api.sh
 MAP_DIR ?= $(PWD)/map
 
 # ── Frontend image config ──────────────────────────────────────────────────────
-FRONTEND_IMAGE ?= robot_appstore:latest
+PLATFORM_FRONTEND ?= $(HOST_PLATFORM)
+ARCH_FRONTEND     := $(subst linux/,,$(PLATFORM_FRONTEND))
+FRONTEND_IMAGE    ?= robot_appstore:$(ARCH_FRONTEND)
 
 # ── RobotStore (hive_bt_server + bt_runner) ───────────────────────────────────
-HIVE_STORE_DIR     ?= $(BACKEND_DIR)
-IMAGE_ROBOTSTORE   ?= robotstore_image
-PLATFORM_ROBOTSTORE ?= linux/amd64
+HIVE_STORE_DIR      ?= $(BACKEND_DIR)
+PLATFORM_ROBOTSTORE ?= $(HOST_PLATFORM)
+ARCH_ROBOTSTORE     := $(subst linux/,,$(PLATFORM_ROBOTSTORE))
+IMAGE_ROBOTSTORE    ?= robotstore_image:$(ARCH_ROBOTSTORE)
 
 # =============================================================================
-.PHONY: help \
+.PHONY: help platform \
         build run stop-all logs-api logs-robotstore \
         build_image_api build_hive_api \
         build_image_robotstore build_robotstore \
@@ -38,7 +72,15 @@ PLATFORM_ROBOTSTORE ?= linux/amd64
         run-api run-bash run_frontend \
         logs stop rm clean
 
-help:
+platform:
+	@echo "Detected host: $(UNAME_M) → HOST_PLATFORM=$(HOST_PLATFORM)"
+	@echo "  hive_api image        : $(IMAGE)          (PLATFORM=$(PLATFORM))"
+	@echo "  robotstore image      : $(IMAGE_ROBOTSTORE) (PLATFORM_ROBOTSTORE=$(PLATFORM_ROBOTSTORE))"
+	@echo "  frontend image        : $(FRONTEND_IMAGE) (PLATFORM_FRONTEND=$(PLATFORM_FRONTEND))"
+	@echo "Override any PLATFORM* var on the command line to cross-build, e.g.:"
+	@echo "  make build_image_api PLATFORM=linux/arm64"
+
+help: platform
 	@echo ""
 	@echo "  ── Full system ──────────────────────────────────────────────────────"
 	@echo "  make build                    Build ALL images + workspaces"
@@ -77,12 +119,12 @@ build: build_hive_api build_robotstore build_frontend
 	@echo "        Run 'make run' to start the full system."
 
 run:
-	@echo "[run] Starting full system (appstore + hive_api + robotstore) ..."
+	@echo "[run] Starting full system (appstore + hive_api + robotstore) on $(HOST_PLATFORM) — ARCH_TAG=$(ARCH) ..."
 	@mkdir -p $(PWD)/build_api $(PWD)/install_api $(PWD)/log_api
 	@chmod +x $(API_ENTRYPOINT)
 	@mkdir -p $(HIVE_STORE_DIR)/build $(HIVE_STORE_DIR)/install $(HIVE_STORE_DIR)/log
 	@chmod +x $(HIVE_STORE_DIR)/docker/dev/entrypoint_robotstore.sh
-	docker compose up
+	ARCH_TAG=$(ARCH) docker compose up
 
 stop-all:
 	@echo "[stop-all] Stopping and removing all compose containers ..."
@@ -229,14 +271,16 @@ build_robotstore: build_image_robotstore
 # Frontend
 # =============================================================================
 build_frontend:
-	@echo "[build_frontend] Building $(FRONTEND_IMAGE) ..."
-	docker build \
+	@echo "[build_frontend] Building $(FRONTEND_IMAGE) for $(PLATFORM_FRONTEND) ..."
+	docker buildx build \
+		--platform $(PLATFORM_FRONTEND) \
 		-f docker/Dockerfile \
 		-t $(FRONTEND_IMAGE) \
+		--load \
 		.
 
 run_frontend:
-	docker compose up
+	ARCH_TAG=$(ARCH) docker compose up appstore
 
 # =============================================================================
 # Utils

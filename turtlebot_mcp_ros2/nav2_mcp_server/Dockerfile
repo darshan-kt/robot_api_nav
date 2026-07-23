@@ -1,14 +1,19 @@
-FROM ghcr.io/alpine-ros/alpine-ros:jazzy-3.20-ros-core
+# ghcr.io/alpine-ros/alpine-ros:jazzy-3.20-ros-core is amd64-only (no arm64
+# manifest published), so this uses the official multi-arch ROS Jazzy image
+# (Ubuntu Noble, linux/amd64 + linux/arm64) instead — same package set,
+# installed via apt instead of apk.
+FROM ros:jazzy-ros-base
 
 # ROS 2 environment variables
 ENV ROS_DISTRO=jazzy
 ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 ENV ROS_DOMAIN_ID=0
 ENV ROS_LOCALHOST_ONLY=1
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Install necessary ROS2 packages
-RUN apk add --no-cache \
-    py3-pip \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-pip \
     ros-${ROS_DISTRO}-rmw-fastrtps-cpp \
     ros-${ROS_DISTRO}-rosidl-generator-py \
     ros-${ROS_DISTRO}-rosidl-typesupport-c \

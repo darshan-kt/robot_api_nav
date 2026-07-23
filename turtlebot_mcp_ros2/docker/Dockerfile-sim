@@ -9,6 +9,24 @@
 #
 # Build:  make build_sim          (or docker build -f docker/Dockerfile-sim ...)
 # Run:    make run_sim            (X11 GUI: gzclient + RViz on your desktop)
+#
+# ARCH NOTE: amd64-only, on purpose. Gazebo Classic (gazebo11) and its ROS
+# bindings (ros-humble-gazebo-ros-pkgs, ros-humble-turtlebot3-gazebo) were
+# never published for arm64 on the ROS build farm — confirmed by querying
+# the arm64 apt index directly, apt-get simply has no candidate for either
+# package on that architecture. This is an upstream gap, not something a
+# base-image swap can fix; the successor project (Gazebo Sim / gz-sim) does
+# support arm64, but TurtleBot3's official simulation packages are built
+# against Gazebo Classic, so using it here would mean replacing worlds,
+# spawn tooling, and launch files, not just this Dockerfile.
+#
+# In practice this is also how TurtleBot3 is normally run: Gazebo simulation
+# on a desktop-class amd64 workstation, while the Raspberry Pi 5 runs the
+# real onboard stack only (see backend/docker/dev/Dockerfile-api and
+# Dockerfile-arm, both arm64-verified) and joins the same ROS_DOMAIN_ID over
+# the network. Do not change this FROM line to a multi-arch base — it will
+# build "successfully" on arm64 host arch metadata but fail on the apt
+# install step below the moment gazebo packages are requested.
 # ============================================================================
 FROM osrf/ros:humble-desktop
 

@@ -9,6 +9,10 @@ services:
       context: .
       dockerfile: docker/Dockerfile-sim
     container_name: turtlebot3-sim
+    # Pinned amd64: Gazebo Classic has no arm64 packages upstream (see the
+    # ARCH NOTE in docker/Dockerfile-sim). Run this service on a dev
+    # workstation; the Pi5 runs hive_api + robotstore only.
+    platform: linux/amd64
 
     # Host network is mandatory for ROS 2 DDS — same domain/vendor as
     # hive_api-api and robotstore_cont-run containers.
@@ -33,7 +37,7 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
 
-    # GPU acceleration for Gazebo/RViz rendering (Intel/AMD).
+    # GPU acceleration for Gazebo/RViz rendering (Intel/AMD Mesa DRI).
     devices:
       - /dev/dri:/dev/dri
 

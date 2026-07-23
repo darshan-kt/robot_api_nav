@@ -2,6 +2,7 @@ services:
 
   # ── React / Vite frontend ────────────────────────────────────────────────────
   appstore:
+    image: robot_appstore:${ARCH_TAG:-amd64}
     build:
       context: .
       dockerfile: docker/Dockerfile
@@ -20,7 +21,7 @@ services:
   # ── ROS 2 API gateway (backend/hive_api_gateway) ────────────────────────────
   # Pre-build image + workspace first:  make build_hive_api
   hive_api:
-    image: hive_api:latest
+    image: hive_api:${ARCH_TAG:-amd64}
     container_name: hive_api-api
 
     # Host network is mandatory for ROS 2 DDS multicast discovery.
@@ -59,7 +60,7 @@ services:
   # ── RobotStore: hive_bt_server + bt_runner (backend/) ───────────────────────
   # Pre-build image + workspace first:  make build_robotstore
   robotstore:
-    image: robotstore_image
+    image: robotstore_image:${ARCH_TAG:-amd64}
     container_name: robotstore_cont-run
 
     # Host network mandatory for DDS; privileged for hardware/serial access

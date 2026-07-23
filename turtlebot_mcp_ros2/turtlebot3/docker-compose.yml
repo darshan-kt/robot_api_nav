@@ -4,6 +4,9 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: turtlebot3
+    # Pinned amd64: Dockerfile installs ros-humble-gazebo-ros-pkgs, which has
+    # no arm64 build upstream (Gazebo Classic isn't published for arm64).
+    platform: linux/amd64
     tty: true
     restart: always
     cap_add:

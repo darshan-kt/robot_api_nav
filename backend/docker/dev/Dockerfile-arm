@@ -1,11 +1,14 @@
 # ============================================================================
-# ROS 2 Humble (Change to FROM ros:humble if on x86_64/Intel/AMD)
+# ROS 2 Humble (Ubuntu 22.04) — multi-arch image (linux/amd64 + linux/arm64)
+#
+# NOTE: this file previously had two `FROM` lines (an arm64v8/ros:humble one
+# followed by an osrf/ros:humble-desktop one). Docker only honors the LAST
+# FROM in a single-stage build, so every "arm" build was silently compiling
+# the amd64-only osrf image. Using the official multi-arch `ros:humble`
+# image fixes that: buildx resolves the correct manifest for whatever
+# --platform is requested (linux/arm64 for Raspberry Pi 5, linux/amd64 here).
 # ============================================================================
-#ARM
-FROM arm64v8/ros:humble
-
-#AMD
-FROM osrf/ros:humble-desktop
+FROM ros:humble
 
 # ---- Build Arguments ----
 ARG USERNAME=charlie

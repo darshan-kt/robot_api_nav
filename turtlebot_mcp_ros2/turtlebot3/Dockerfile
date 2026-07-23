@@ -1,4 +1,12 @@
 # Use the base ROS2 humble image
+#
+# ARCH NOTE: amd64-only, on purpose. This installs ros-${ROS_DISTRO}-gazebo-
+# ros-pkgs, which — like ros-humble-turtlebot3-gazebo — was never published
+# for arm64 on the ROS build farm (Gazebo Classic has no arm64 packages
+# upstream at all). See turtlebot_mcp_ros2/docker/Dockerfile-sim for the
+# full explanation; the same constraint applies here. Gazebo simulation runs
+# on a desktop-class amd64 machine; the Raspberry Pi 5 runs the real onboard
+# stack (hive_api, robotstore — both arm64-verified) instead.
 FROM osrf/ros:humble-desktop-full
 
 # Set environment variables
