@@ -45,3 +45,35 @@ services:
     command: gui
 
     restart: unless-stopped
+
+  # ── RPLIDAR ROS 2 driver ─────────────────────────────────────────────────────
+  # Build first:   make build_rplidar
+  # Multi-arch (amd64 + arm64) — runs equally well on a dev box or on the
+  # Pi5 with the physical sensor attached. No platform pin needed.
+  rplidar:
+    image: rplidar_ros2:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile-rplidar
+    container_name: rplidar-ros2
+
+    # Host network for ROS 2 DDS — same domain/vendor as the other services.
+    network_mode: host
+
+    tty: true
+    stdin_open: true
+
+    environment:
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - ROS_DOMAIN_ID=0
+      - RPLIDAR_MODEL=a1
+      - RPLIDAR_PORT=/dev/ttyUSB0
+      - RPLIDAR_BAUDRATE=115200
+      - RPLIDAR_FRAME_ID=laser
+
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0
+
+    command: run
+
+    restart: unless-stopped
