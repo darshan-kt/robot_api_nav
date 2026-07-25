@@ -1,1 +1,0 @@
-/home/ros2_ws/build_api/hive_interfaces/rosidl_generator_py/hive_interfaces/__init__.py

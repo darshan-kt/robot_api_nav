@@ -1,0 +1,9 @@
+/home/darshan/appstore_arm/turtlebot_mcp_ros2/build/turtlebot3_simulations/CMakeFiles/uninstall.dir
+/home/darshan/appstore_arm/turtlebot_mcp_ros2/build/turtlebot3_simulations/CMakeFiles/turtlebot3_simulations_uninstall.dir
+/home/darshan/appstore_arm/turtlebot_mcp_ros2/build/turtlebot3_simulations/CMakeFiles/test.dir
+/home/darshan/appstore_arm/turtlebot_mcp_ros2/build/turtlebot3_simulations/CMakeFiles/edit_cache.dir
+/home/darshan/appstore_arm/turtlebot_mcp_ros2/build/turtlebot3_simulations/CMakeFiles/rebuild_cache.dir
+/home/darshan/appstore_arm/turtlebot_mcp_ros2/build/turtlebot3_simulations/CMakeFiles/list_install_components.dir
+/home/darshan/appstore_arm/turtlebot_mcp_ros2/build/turtlebot3_simulations/CMakeFiles/install.dir
+/home/darshan/appstore_arm/turtlebot_mcp_ros2/build/turtlebot3_simulations/CMakeFiles/install/local.dir
+/home/darshan/appstore_arm/turtlebot_mcp_ros2/build/turtlebot3_simulations/CMakeFiles/install/strip.dir

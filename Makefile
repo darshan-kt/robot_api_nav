@@ -295,13 +295,17 @@ stop:
 	-@docker stop hive_api-api          2>/dev/null || true
 	-@docker stop $(CONTAINER)-build    2>/dev/null || true
 	-@docker stop $(CONTAINER)-bash     2>/dev/null || true
+	-@docker stop $(CONTAINER)-api      2>/dev/null || true
 	-@docker stop robotstore_cont-run   2>/dev/null || true
 	-@docker stop robotstore-build      2>/dev/null || true
+	-@docker stop robot_appstore        2>/dev/null || true
 
 rm: stop
 	-@docker rm hive_api-api            2>/dev/null || true
 	-@docker rm $(CONTAINER)-build      2>/dev/null || true
 	-@docker rm $(CONTAINER)-bash       2>/dev/null || true
+	-@docker rm $(CONTAINER)-api        2>/dev/null || true
+	-@docker rm robot_appstore          2>/dev/null || true
 	-@docker rm robotstore_cont-run     2>/dev/null || true
 	-@docker rm robotstore-build        2>/dev/null || true
 

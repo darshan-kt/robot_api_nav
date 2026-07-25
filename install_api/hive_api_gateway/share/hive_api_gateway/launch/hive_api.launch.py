@@ -1,1 +1,0 @@
-/home/ros2_ws/build_api/hive_api_gateway/launch/hive_api.launch.py
