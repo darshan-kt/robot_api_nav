@@ -15,7 +15,7 @@ services:
     platform: linux/amd64
 
     # Host network is mandatory for ROS 2 DDS — same domain/vendor as
-    # hive_api-api and robotstore_cont-run containers.
+    # hive_api-api-arm and robotstore_cont-run-arm containers.
     network_mode: host
 
     tty: true
