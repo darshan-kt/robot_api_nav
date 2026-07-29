@@ -1,6 +1,19 @@
+# Per-service `deploy.resources.limits` below are CPU/memory ceilings, sized
+# for a Raspberry Pi 5 (4 cores / 8 GB): 0.5+1.5+2.5 = 4.5 vCPU and
+# 256M+768M+3072M = 4G total, leaving headroom for the host OS, Docker
+# daemon, and any other services (e.g. turtlebot_mcp_ros2's rplidar). A
+# per-container ceiling being individually generous while the sum exceeds 4
+# is intentional — Linux's CFS scheduler still caps real usage to what's
+# physically available, this just stops any ONE runaway container from
+# starving everything else and hanging the whole board. Compose v2 applies
+# these on plain `docker compose up`, no Swarm needed (Compose 2.35.1 here).
 services:
 
-  # ── React / Vite frontend ────────────────────────────────────────────────────
+  # ── React frontend — production build served by nginx ───────────────────────
+  # No source/node_modules bind mounts: the image is self-contained (static
+  # assets baked in at build time), so there's nothing on the host to mount.
+  # For local hot-reload development, run `npm run dev` directly instead of
+  # through Docker.
   appstore:
     image: robot_appstore:${ARCH_TAG:-amd64}
     build:
@@ -9,14 +22,12 @@ services:
     container_name: robot_appstore
     ports:
       - "5174:5174"
-    volumes:
-      - .:/app
-      - /app/node_modules
-    environment:
-      - NODE_ENV=development
-    stdin_open: true
-    tty: true
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
   # ── ROS 2 API gateway (backend/hive_api_gateway) ────────────────────────────
   # Pre-build image + workspace first:  make build_hive_api
@@ -56,6 +67,11 @@ services:
     command: bash /home/ros2_ws/entrypoint_api.sh just
 
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 768M
 
   # ── RobotStore: hive_bt_server + bt_runner (backend/) ───────────────────────
   # Pre-build image + workspace first:  make build_robotstore
@@ -98,3 +114,8 @@ services:
     command: bash /home/charlie/ros2_ws/entrypoint_robotstore.sh
 
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.5"
+          memory: 3072M

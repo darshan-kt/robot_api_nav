@@ -70,7 +70,7 @@ IMAGE_ROBOTSTORE    ?= robotstore_image:$(ARCH_ROBOTSTORE)
         build_image_robotstore build_robotstore \
         build_frontend \
         run-api run-bash run_frontend \
-        logs stop rm clean
+        logs stop rm clean check-thermal
 
 platform:
 	@echo "Detected host: $(UNAME_M) → HOST_PLATFORM=$(HOST_PLATFORM)"
@@ -107,6 +107,7 @@ help: platform
 	@echo "  make stop                     Stop standalone containers"
 	@echo "  make rm                       Remove stopped containers"
 	@echo "  make clean                    Delete colcon build/install/log artifacts"
+	@echo "  make check-thermal            Pi5 thermal/under-voltage check (run ON the Pi5)"
 	@echo ""
 
 # =============================================================================
@@ -313,3 +314,10 @@ clean:
 	@echo "[clean] Removing colcon artifacts ..."
 	-sudo rm -rf $(PWD)/build_api $(PWD)/install_api $(PWD)/log_api
 	-sudo rm -rf $(BACKEND_DIR)/build $(BACKEND_DIR)/install $(BACKEND_DIR)/log
+
+# =============================================================================
+# Pi5 thermal/power check — only meaningful when run ON the Pi5 itself
+# (vcgencmd talks to the SoC firmware; it isn't reachable from a dev box).
+# =============================================================================
+check-thermal:
+	@./scripts/check_pi5_health.sh

@@ -77,3 +77,10 @@ services:
     command: run
 
     restart: unless-stopped
+    # Lightweight driver node — this ceiling just stops it joining any
+    # runaway-container pile-on with hive_api/robotstore on the Pi5.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M

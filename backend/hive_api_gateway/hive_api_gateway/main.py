@@ -742,9 +742,9 @@ async def ping():
 @api_app.websocket("/api/telemetry")
 async def telemetry_ws(ws: WebSocket):
     """
-    Push /odom position + yaw to the frontend at ~10 Hz.
+    Push /odom position + yaw to the frontend at ~1 Hz.
 
-    Frame sent every 100 ms:
+    Frame sent every 1 s:
         {"type": "telemetry", "x": 1.23, "y": -0.45, "theta": 0.78}
 
     theta is yaw in radians (ROS convention, CCW-positive).
@@ -761,7 +761,7 @@ async def telemetry_ws(ws: WebSocket):
                         "y":     odom["y"],
                         "theta": odom["yaw"],
                     })
-            await asyncio.sleep(0.1)   # 10 Hz push rate
+            await asyncio.sleep(1.0)   # 1 Hz push rate
     except (WebSocketDisconnect, Exception):
         pass
 
@@ -769,9 +769,9 @@ async def telemetry_ws(ws: WebSocket):
 @api_app.websocket("/api/localisation")
 async def localisation_ws(ws: WebSocket):
     """
-    Push the robot's AMCL pose (/amcl_pose) to the frontend at ~5 Hz.
+    Push the robot's AMCL pose (/amcl_pose) to the frontend at ~1 Hz.
 
-    Frame sent every 200 ms (only when a fresh pose is available):
+    Frame sent every 1 s (only when a fresh pose is available):
         {"type": "localisation", "x": 1.23, "y": -0.45, "yaw": 0.78,
          "frame_id": "map", "age_s": 0.12}
 
@@ -798,7 +798,7 @@ async def localisation_ws(ws: WebSocket):
                         "frame_id": loc["frame_id"],
                         "age_s":    loc["age_s"],
                     })
-            await asyncio.sleep(0.2)   # 5 Hz — AMCL publishes on motion
+            await asyncio.sleep(1.0)   # 1 Hz — AMCL publishes on motion
     except (WebSocketDisconnect, Exception):
         pass
 
