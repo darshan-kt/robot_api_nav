@@ -24,7 +24,9 @@ services:
 
   robotstore:
     image: robotstore_image
-    container_name: robotstore_cont-run
+    # Suffixed -arm: avoids colliding with sibling checkouts of this repo
+    # (e.g. appstore_amd) that use the same container_name on the same host.
+    container_name: robotstore_cont-run-arm
     network_mode: "host"
     privileged: true
     tty: true

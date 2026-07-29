@@ -287,28 +287,28 @@ run_frontend:
 # Utils
 # =============================================================================
 logs-api:
-	docker logs -f hive_api-api
+	docker logs -f hive_api-api-arm
 
 logs-robotstore:
-	docker logs -f robotstore_cont-run
+	docker logs -f robotstore_cont-run-arm
 
 stop:
-	-@docker stop hive_api-api          2>/dev/null || true
-	-@docker stop $(CONTAINER)-build    2>/dev/null || true
-	-@docker stop $(CONTAINER)-bash     2>/dev/null || true
-	-@docker stop $(CONTAINER)-api      2>/dev/null || true
-	-@docker stop robotstore_cont-run   2>/dev/null || true
-	-@docker stop robotstore-build      2>/dev/null || true
-	-@docker stop robot_appstore        2>/dev/null || true
+	-@docker stop hive_api-api-arm        2>/dev/null || true
+	-@docker stop $(CONTAINER)-build      2>/dev/null || true
+	-@docker stop $(CONTAINER)-bash       2>/dev/null || true
+	-@docker stop $(CONTAINER)-api        2>/dev/null || true
+	-@docker stop robotstore_cont-run-arm 2>/dev/null || true
+	-@docker stop robotstore-build        2>/dev/null || true
+	-@docker stop robot_appstore-arm      2>/dev/null || true
 
 rm: stop
-	-@docker rm hive_api-api            2>/dev/null || true
-	-@docker rm $(CONTAINER)-build      2>/dev/null || true
-	-@docker rm $(CONTAINER)-bash       2>/dev/null || true
-	-@docker rm $(CONTAINER)-api        2>/dev/null || true
-	-@docker rm robot_appstore          2>/dev/null || true
-	-@docker rm robotstore_cont-run     2>/dev/null || true
-	-@docker rm robotstore-build        2>/dev/null || true
+	-@docker rm hive_api-api-arm          2>/dev/null || true
+	-@docker rm $(CONTAINER)-build        2>/dev/null || true
+	-@docker rm $(CONTAINER)-bash         2>/dev/null || true
+	-@docker rm $(CONTAINER)-api          2>/dev/null || true
+	-@docker rm robot_appstore-arm        2>/dev/null || true
+	-@docker rm robotstore_cont-run-arm   2>/dev/null || true
+	-@docker rm robotstore-build          2>/dev/null || true
 
 clean:
 	@echo "[clean] Removing colcon artifacts ..."

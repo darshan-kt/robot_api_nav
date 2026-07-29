@@ -19,7 +19,11 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    container_name: robot_appstore
+    # Suffixed -arm: this repo (appstore_arm) is commonly checked out
+    # alongside sibling copies (e.g. appstore_amd) that use the same
+    # docker-compose.yml — plain "robot_appstore" collides with theirs
+    # since Docker container names are global on the host.
+    container_name: robot_appstore-arm
     ports:
       - "5174:5174"
     restart: unless-stopped
@@ -33,7 +37,9 @@ services:
   # Pre-build image + workspace first:  make build_hive_api
   hive_api:
     image: hive_api:${ARCH_TAG:-amd64}
-    container_name: hive_api-api
+    # Suffixed -arm: avoids colliding with sibling checkouts (see appstore
+    # note above).
+    container_name: hive_api-api-arm
 
     # Host network is mandatory for ROS 2 DDS multicast discovery.
     # The gateway listens on host port 1717 — no 'ports:' mapping needed.
@@ -77,7 +83,9 @@ services:
   # Pre-build image + workspace first:  make build_robotstore
   robotstore:
     image: robotstore_image:${ARCH_TAG:-amd64}
-    container_name: robotstore_cont-run
+    # Suffixed -arm: avoids colliding with sibling checkouts (see appstore
+    # note above).
+    container_name: robotstore_cont-run-arm
 
     # Host network mandatory for DDS; privileged for hardware/serial access
     network_mode: host

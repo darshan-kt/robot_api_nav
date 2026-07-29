@@ -232,7 +232,7 @@ Robot spawn pose is set in the sim `docker-compose.yml` (`SPAWN_X`, `SPAWN_Y`,
 2. **One Gazebo at a time.** Never run the host `turtle_nav.sh` and the sim
    container together — two gzservers deadlock on port 11345.
 3. **Gateway Python changes** hot-apply on container restart
-   (`docker restart hive_api-api`) because the source is volume-mounted.
+   (`docker restart hive_api-api-arm`) because the source is volume-mounted.
    **C++ / BT XML changes** need `make build_robotstore`.
 4. **AMCL publishes on motion.** `/amcl_pose` goes quiet while the robot is
    stationary — that's normal. The gateway keeps streaming the last known pose
