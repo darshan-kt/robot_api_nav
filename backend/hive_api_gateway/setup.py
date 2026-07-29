@@ -15,7 +15,7 @@ setup(
         # ── all .pgm map images ──
         ('share/' + package_name + '/resource', glob('resource/*.pgm')),
     ],
-    install_requires=['setuptools','fastapi','uvicorn'],
+    install_requires=['setuptools', 'fastapi', 'uvicorn', 'Pillow', 'PyYAML'],
     zip_safe=True,
     maintainer='Darshan Gowda',
     maintainer_email='dkg@hiverobots.dk',
