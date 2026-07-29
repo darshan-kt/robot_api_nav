@@ -6,7 +6,7 @@
 
 ## Overview
 
-The Hive API Gateway is an HTTP server that bridges external clients (webapp, curl, scripts) to the ROS 2 robot system. It handles task dispatching, coordinate conversion, map serving, and lifecycle management of SLAM and navigation nodes.
+The Hive API Gateway is an HTTP server that bridges external clients (webapp, curl, scripts) to the ROS 2 robot system. It handles task dispatching, coordinate conversion, and map serving.
 
 ```
 Client  ──HTTP──▶  FastAPI Gateway (:1717)  ──ROS 2──▶  Hive Robot
@@ -24,9 +24,6 @@ Client  ──HTTP──▶  FastAPI Gateway (:1717)  ──ROS 2──▶  Hive
 | `POST` | `/map/preview` | Dry-run pixel → map coordinate conversion |
 | `GET` | `/map_image` | Serve a `.pgm` map file rendered as PNG |
 | `GET` | `/map_image/list` | List all available `.pgm` map files |
-| `GET` | `/lifecycle_status` | Live SLAM and NAV status |
-| `POST` | `/lifecycle_start` | Start SLAM and localization nodes |
-| `POST` | `/lifecycle_stop` | Stop and clean up localization nodes |
 
 ---
 
@@ -185,88 +182,6 @@ curl http://10.10.0.200:1717/map_image/list
 
 ---
 
-### `GET /lifecycle_status`
-
-Returns the live status of SLAM and navigation. Both checks run concurrently — response time is ~2 seconds worst case.
-
-| Field | ON condition | OFF condition |
-|-------|-------------|---------------|
-| `SLAM_status` | `global_localization_lifecycle_node` is `active` | Node is `unconfigured` or unreachable |
-| `NAV_status` | `/navigate_to_pose` action server responds within 2s | Timeout or unavailable |
-
-```bash
-curl http://10.10.0.200:1717/lifecycle_status
-```
-
-```json
-{
-  "SLAM_status": "ON",
-  "NAV_status":  "ON"
-}
-```
-
----
-
-### `POST /lifecycle_start`
-
-Runs the full SLAM and localization startup sequence. Fails fast with `500` if any step fails.
-
-**Sequence:**
-
-| Step | ROS 2 Command | Notes |
-|------|---------------|-------|
-| 1 | `lifecycle set /auto_localizer_lifecycle_node activate` | Direct activate |
-| ↳ | `lifecycle set /auto_localizer_lifecycle_node deactivate` | Only if step 1 fails |
-| ↳ | `lifecycle set /auto_localizer_lifecycle_node activate` | Retry after deactivate |
-| 2 | `lifecycle set /global_localization_lifecycle_node configure` | Configure global localizer |
-| 3 | `lifecycle set /global_localization_lifecycle_node activate` | Activate global localizer |
-
-```bash
-curl -X POST http://10.10.0.200:1717/lifecycle_start
-```
-
-```json
-{
-  "accepted": true,
-  "action":   "lifecycle_start",
-  "steps": [
-    { "node": "/auto_localizer_lifecycle_node",      "transition": "activate",  "ok": true },
-    { "node": "/global_localization_lifecycle_node", "transition": "configure", "ok": true },
-    { "node": "/global_localization_lifecycle_node", "transition": "activate",  "ok": true }
-  ]
-}
-```
-
----
-
-### `POST /lifecycle_stop`
-
-Gracefully stops the global localization node. Cleanup only runs if deactivate succeeds.
-
-**Sequence:**
-
-| Step | ROS 2 Command | Notes |
-|------|---------------|-------|
-| 1 | `lifecycle set /global_localization_lifecycle_node deactivate` | Deactivate global localizer |
-| 2 | `lifecycle set /global_localization_lifecycle_node cleanup` | Release resources |
-
-```bash
-curl -X POST http://10.10.0.200:1717/lifecycle_stop
-```
-
-```json
-{
-  "accepted": true,
-  "action":   "lifecycle_stop",
-  "steps": [
-    { "node": "/global_localization_lifecycle_node", "transition": "deactivate", "ok": true },
-    { "node": "/global_localization_lifecycle_node", "transition": "cleanup",    "ok": true }
-  ]
-}
-```
-
----
-
 ## Error Reference
 
 | Code | Meaning | Common Cause |
@@ -274,16 +189,13 @@ curl -X POST http://10.10.0.200:1717/lifecycle_stop
 | `400` | Bad request | Invalid filename on `/map_image` |
 | `404` | Not found | `.pgm` file missing from resource folder |
 | `422` | Validation error | Missing `col` / `row` in `pixel_waypoints` |
-| `500` | Server error | ROS goal rejected or lifecycle transition failed |
+| `500` | Server error | ROS goal rejected |
 | `503` | Service unavailable | ROS not initialised or Hive action server unreachable |
 
 ---
 
 ## Notes for Future Development
 
-- **`/lifecycle_stop`** — `auto_localizer_lifecycle_node` deactivate is not yet wired. Add when shutdown sequence is confirmed.
-- **`/lifecycle_status`** — SLAM check uses a CLI subprocess (`ros2 lifecycle get`). A cleaner approach would use a native `rclpy` service client.
-- **NAV check timeout** — currently 2s. Increase or cache last known state if the nav stack takes longer to come up.
 - **Map metadata** — `MAP_META` is hardcoded. Consider loading from the `.yaml` sidecar file at startup to avoid drift when maps are updated.
 - **CORS** — currently allows all origins (`*`). Restrict to known webapp origins before production deployment.
 - **Behavior ID 21** — has special handling that populates `goal.pose` from the first waypoint. Document or refactor once the behavior interface is stable.
@@ -315,13 +227,4 @@ http://10.10.0.200:1717/map_image
 
 # List available maps
 curl -X GET http://10.10.0.200:1717/map_image/list
-
-# Lifecycle status
-curl -X GET http://10.10.0.200:1717/lifecycle_status
-
-# Start SLAM + localization
-curl -X POST http://10.10.0.200:1717/lifecycle_start
-
-# Stop localization
-curl -X POST http://10.10.0.200:1717/lifecycle_stop
 ```

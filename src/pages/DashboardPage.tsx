@@ -61,7 +61,7 @@ export function DashboardPage() {
 
     // Live streams (same gateway sources as the other apps)
     const { health, history } = useGatewayHealth();
-    const { scan } = useScan();
+    const { scan } = useScan(true);   // lightweight stat card only — always on
     const { robotState } = useTelemetry();
     const { localisation } = useLocalisation();
     const { plan } = usePlan();

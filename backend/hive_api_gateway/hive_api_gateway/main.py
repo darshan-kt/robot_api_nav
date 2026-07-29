@@ -1,4 +1,4 @@
-import threading, uuid, json, asyncio, math, subprocess, io, time, os
+import threading, uuid, json, asyncio, math, io, time, os
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,7 +8,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
-from nav2_msgs.action import NavigateToPose, NavigateThroughPoses
+from nav2_msgs.action import NavigateThroughPoses
 from hive_interfaces.action import ExecuteBehavior
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from nav_msgs.msg import OccupancyGrid, Odometry, Path as NavPath
@@ -183,7 +183,6 @@ class ApiNode(Node):
         super().__init__('hive_api_gateway')
         self.client = ActionClient(self, ExecuteBehavior, '/hive/execute_behavior')
 
-        self.nav_client              = ActionClient(self, NavigateToPose,        '/navigate_to_pose')
         self.nav_through_client      = ActionClient(self, NavigateThroughPoses, '/navigate_through_poses')
 
         # ── Teleop velocity publisher (/api/velocity_ctrl → /cmd_vel) ───────────
@@ -226,9 +225,9 @@ class ApiNode(Node):
             depth=5,
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
         )
-        self._latest_scan    = None
-        self._scan_received  = False
-        self._scan_data_lock = threading.Lock()
+        self._latest_scan_msg = None
+        self._scan_received   = False
+        self._scan_data_lock  = threading.Lock()
 
         self.create_subscription(OccupancyGrid, '/global_costmap/costmap',
                                  self._costmap_cb, _be_qos)
@@ -319,26 +318,41 @@ class ApiNode(Node):
             self._costmap_time = time.monotonic()
 
     def _scan_cb(self, msg: LaserScan):
+        # Cheap: just record the timestamp (used by is_robot_alive()) and
+        # stash a reference to the raw message. The expensive per-beam
+        # NaN/Inf→None + rounding pass used to run HERE, on every incoming
+        # LaserScan (~10 Hz) regardless of whether anyone was even listening
+        # on /api/scan — on a Pi5 that's real CPU burned for nothing, and it
+        # ran on the same single-threaded rclpy executor as /amcl_pose and
+        # /odom, so it could stall localisation/odometry too. It's moved to
+        # get_scan() below, which is now only called from the /api/scan
+        # websocket loop, capped at ~1 Hz and only while a client has scan
+        # updates toggled on.
         with self._alive_lock:
             self._scan_time = time.monotonic()
-        # Replace NaN/Inf with None so JSON serialisation is clean
-        raw = msg.ranges
-        ranges = [round(r, 3) if math.isfinite(r) else None for r in raw]
         with self._scan_data_lock:
-            self._latest_scan = {
-                "frame_id":        msg.header.frame_id,
-                "angle_min":       round(msg.angle_min,       4),
-                "angle_max":       round(msg.angle_max,       4),
-                "angle_increment": round(msg.angle_increment, 6),
-                "range_min":       round(msg.range_min,       3),
-                "range_max":       round(msg.range_max,       3),
-                "ranges":          ranges,
-            }
-            self._scan_received = True
+            self._latest_scan_msg = msg
+            self._scan_received   = True
 
     def get_scan(self) -> dict | None:
+        """Build the JSON-ready scan payload. Only call this at the rate you
+        actually intend to send it (see scan_ws) — the ranges transform is
+        O(n) pure-Python work over the whole beam array."""
         with self._scan_data_lock:
-            return dict(self._latest_scan) if self._scan_received else None
+            if not self._scan_received:
+                return None
+            msg = self._latest_scan_msg
+
+        ranges = [round(r, 3) if math.isfinite(r) else None for r in msg.ranges]
+        return {
+            "frame_id":        msg.header.frame_id,
+            "angle_min":       round(msg.angle_min,       4),
+            "angle_max":       round(msg.angle_max,       4),
+            "angle_increment": round(msg.angle_increment, 6),
+            "range_min":       round(msg.range_min,       3),
+            "range_max":       round(msg.range_max,       3),
+            "ranges":          ranges,
+        }
 
     def is_robot_alive(self, max_age: float = 5.0) -> dict:
         """
@@ -506,95 +520,6 @@ def _first_pose_stamped(poses: list) -> PoseStamped:
     msg.pose.orientation.z = float(ori.get("z", 0.0))
     msg.pose.orientation.w = float(ori.get("w", 1.0))
     return msg
-
-
-# =============================================================================
-# Lifecycle helpers
-# =============================================================================
-
-_LIFECYCLE_NODE = "/auto_localizer_lifecycle_node"
-_GLOBAL_NODE    = "/global_localization_lifecycle_node"
-
-
-def _lifecycle_set_node(node: str, transition: str) -> tuple[bool, str]:
-    """
-    Run: ros2 lifecycle set <node> <transition>
-    Returns (success: bool, output: str).
-    Success is True only when returncode == 0 AND stdout contains
-    'Transitioning' or 'Transition successful' — ros2 CLI can exit 0
-    even on soft failures so we double-check the output.
-    """
-    cmd = ["ros2", "lifecycle", "set", node, transition]
-    print(f"  [lifecycle] running: {' '.join(cmd)}")
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        output = (result.stdout + result.stderr).strip()
-        print(f"  [lifecycle] rc={result.returncode} output: {output}")
-
-        success = result.returncode == 0 and (
-            "Transitioning" in output or
-            "Transition successful" in output or
-            "transition successful" in output
-        )
-        return success, output
-
-    except subprocess.TimeoutExpired:
-        msg = f"lifecycle set {transition} on {node} timed out after 10s"
-        print(f"  [lifecycle] ERROR: {msg}")
-        return False, msg
-
-    except FileNotFoundError:
-        msg = "ros2 CLI not found — is ROS 2 sourced in this environment?"
-        print(f"  [lifecycle] ERROR: {msg}")
-        return False, msg
-
-
-def _lifecycle_set(transition: str) -> tuple[bool, str]:
-    """Convenience wrapper for _LIFECYCLE_NODE (/auto_localizer_lifecycle_node)."""
-    return _lifecycle_set_node(_LIFECYCLE_NODE, transition)
-
-
-def _get_global_lifecycle_state() -> str:
-    """
-    Run: ros2 lifecycle get /global_localization_lifecycle_node
-    Returns the raw state string lowercased (e.g. 'active', 'unconfigured').
-    """
-    cmd = ["ros2", "lifecycle", "get", _GLOBAL_NODE]
-    print(f"  [lifecycle_status] running: {' '.join(cmd)}")
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        output = (result.stdout + result.stderr).strip().lower()
-        print(f"  [lifecycle_status] rc={result.returncode} output: {output}")
-        return output
-
-    except subprocess.TimeoutExpired:
-        print(f"  [lifecycle_status] ERROR: lifecycle get timed out")
-        return "unknown"
-
-    except FileNotFoundError:
-        print(f"  [lifecycle_status] ERROR: ros2 CLI not found")
-        return "unknown"
-
-
-def _check_nav_server() -> bool:
-    """
-    Check if /navigate_to_pose action server is available.
-    Uses a short 2s timeout — non-blocking from the caller's perspective
-    when run via run_in_executor.
-    """
-    available = _node.nav_client.wait_for_server(timeout_sec=2.0)
-    print(f"  [lifecycle_status] /navigate_to_pose available: {available}")
-    return available
 
 
 # =============================================================================
@@ -968,9 +893,17 @@ async def plan_ws(ws: WebSocket):
 @api_app.websocket("/api/scan")
 async def scan_ws(ws: WebSocket):
     """
-    Push /scan (LaserScan) data to the frontend at 1 Hz.
+    Push /scan (LaserScan) data to the frontend at ~1 Hz — but ONLY while the
+    client has opted in via a toggle message. Building this payload means an
+    O(n) Python pass over every LIDAR beam (see ApiNode.get_scan()), so it's
+    off by default and entirely client-controlled: no point spending CPU
+    serialising scan frames nobody's displaying.
 
-    Frame sent every 1 s:
+    Client → server, at any time (idle keepalive doubles as the poll tick):
+        {"type": "scan_toggle", "enabled": true}   # start receiving frames
+        {"type": "scan_toggle", "enabled": false}  # stop (default state)
+
+    Server → client, at most once per second, only while enabled:
         {
           "type": "scan",
           "frame_id": "base_scan",
@@ -983,13 +916,23 @@ async def scan_ws(ws: WebSocket):
         }
     """
     await ws.accept()
+    enabled = False   # default OFF — nothing is sent until the client asks
     try:
         while True:
-            if _ros_ready and _node:
+            try:
+                raw = await asyncio.wait_for(ws.receive_text(), timeout=1.0)
+                data = json.loads(raw)
+                if data.get("type") == "scan_toggle":
+                    enabled = bool(data.get("enabled", False))
+            except asyncio.TimeoutError:
+                pass
+            except ValueError:
+                pass
+
+            if enabled and _ros_ready and _node:
                 scan = _node.get_scan()
                 if scan:
                     await ws.send_json({"type": "scan", **scan})
-            await asyncio.sleep(1.0)   # 1 Hz — scan data is large, no need faster
     except (WebSocketDisconnect, Exception):
         pass
 
@@ -1133,192 +1076,6 @@ async def list_map_images():
     return {
         "maps":  files,
         "count": len(files),
-    }
-
-
-# =============================================================================
-# Lifecycle endpoints
-# =============================================================================
-
-@api_app.get("/lifecycle_status")
-async def lifecycle_status():
-    """
-    Returns live status of SLAM and NAV systems.
-
-    SLAM_status: ON  → /global_localization_lifecycle_node is 'active'
-    SLAM_status: OFF → /global_localization_lifecycle_node is 'unconfigured' or anything else
-    NAV_status:  ON  → /navigate_to_pose action server is reachable
-    NAV_status:  OFF → /navigate_to_pose action server is not reachable
-
-    curl http://10.10.0.200:1717/lifecycle_status
-    """
-    loop = asyncio.get_event_loop()
-
-    # Run both checks concurrently to keep response fast
-    slam_state_task = loop.run_in_executor(None, _get_global_lifecycle_state)
-    nav_check_task  = loop.run_in_executor(None, _check_nav_server)
-
-    slam_state, nav_available = await asyncio.gather(slam_state_task, nav_check_task)
-
-    # SLAM ON only if state is 'active'
-    slam_status = "ON" if "active" in slam_state else "OFF"
-    nav_status  = "ON" if nav_available else "OFF"
-
-    print(f"  [lifecycle_status] SLAM={slam_status} (raw='{slam_state}')  NAV={nav_status}")
-
-    return {
-        "SLAM_status": slam_status,
-        "NAV_status":  nav_status,
-    }
-
-
-@api_app.post("/lifecycle_start")
-async def lifecycle_start(payload: dict = {}):
-    """
-    Full lifecycle start sequence:
-      1. Activate /auto_localizer_lifecycle_node
-         (on failure: deactivate → retry activate)
-      2. Configure /global_localization_lifecycle_node
-      3. Activate /global_localization_lifecycle_node
-
-    curl -X POST http://10.10.0.200:1717/lifecycle_start
-    """
-    loop = asyncio.get_event_loop()
-
-    # ── Step 1: activate auto_localizer ──────────────────────────────
-    print(f"\n[/lifecycle_start] step 1 — activate {_LIFECYCLE_NODE}")
-
-    ok, out = await loop.run_in_executor(None, _lifecycle_set, "activate")
-
-    if not ok:
-        print(f"  [lifecycle_start] activate failed — trying deactivate → activate ...")
-
-        await loop.run_in_executor(None, _lifecycle_set, "deactivate")
-
-        ok, out = await loop.run_in_executor(None, _lifecycle_set, "activate")
-
-        if not ok:
-            print(f"  [lifecycle_start] both activate attempts failed")
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "error":  "Failed to activate /auto_localizer_lifecycle_node after retry",
-                    "node":   _LIFECYCLE_NODE,
-                    "detail": out,
-                }
-            )
-
-    print(f"  [lifecycle_start] step 1 done")
-
-    # ── Step 2: configure global_localization ─────────────────────────
-    print(f"  [lifecycle_start] step 2 — configure {_GLOBAL_NODE}")
-
-    ok_cfg, out_cfg = await loop.run_in_executor(
-        None, lambda: _lifecycle_set_node(_GLOBAL_NODE, "configure")
-    )
-
-    if not ok_cfg:
-        print(f"  [lifecycle_start] configure {_GLOBAL_NODE} failed")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error":  "Failed to configure /global_localization_lifecycle_node",
-                "node":   _GLOBAL_NODE,
-                "detail": out_cfg,
-            }
-        )
-
-    print(f"  [lifecycle_start] step 2 done")
-
-    # ── Step 3: activate global_localization ──────────────────────────
-    print(f"  [lifecycle_start] step 3 — activate {_GLOBAL_NODE}")
-
-    ok_act, out_act = await loop.run_in_executor(
-        None, lambda: _lifecycle_set_node(_GLOBAL_NODE, "activate")
-    )
-
-    if not ok_act:
-        print(f"  [lifecycle_start] activate {_GLOBAL_NODE} failed")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error":  "Failed to activate /global_localization_lifecycle_node",
-                "node":   _GLOBAL_NODE,
-                "detail": out_act,
-            }
-        )
-
-    print(f"  [lifecycle_start] step 3 done — all steps complete\n")
-
-    return {
-        "accepted": True,
-        "action":   "lifecycle_start",
-        "steps": [
-            {"node": _LIFECYCLE_NODE, "transition": "activate",  "ok": True, "detail": out},
-            {"node": _GLOBAL_NODE,    "transition": "configure", "ok": True, "detail": out_cfg},
-            {"node": _GLOBAL_NODE,    "transition": "activate",  "ok": True, "detail": out_act},
-        ],
-    }
-
-
-@api_app.post("/lifecycle_stop")
-async def lifecycle_stop(payload: dict = {}):
-    """
-    Full lifecycle stop sequence:
-      1. Deactivate /global_localization_lifecycle_node
-      2. Cleanup /global_localization_lifecycle_node
-
-    curl -X POST http://10.10.0.200:1717/lifecycle_stop
-    """
-    loop = asyncio.get_event_loop()
-
-    # ── Step 1: deactivate global_localization ────────────────────────
-    print(f"\n[/lifecycle_stop] step 1 — deactivate {_GLOBAL_NODE}")
-
-    ok_deact, out_deact = await loop.run_in_executor(
-        None, lambda: _lifecycle_set_node(_GLOBAL_NODE, "deactivate")
-    )
-
-    if not ok_deact:
-        print(f"  [lifecycle_stop] deactivate {_GLOBAL_NODE} failed")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error":  "Failed to deactivate /global_localization_lifecycle_node",
-                "node":   _GLOBAL_NODE,
-                "detail": out_deact,
-            }
-        )
-
-    print(f"  [lifecycle_stop] step 1 done")
-
-    # ── Step 2: cleanup global_localization ───────────────────────────
-    print(f"  [lifecycle_stop] step 2 — cleanup {_GLOBAL_NODE}")
-
-    ok_clean, out_clean = await loop.run_in_executor(
-        None, lambda: _lifecycle_set_node(_GLOBAL_NODE, "cleanup")
-    )
-
-    if not ok_clean:
-        print(f"  [lifecycle_stop] cleanup {_GLOBAL_NODE} failed")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error":  "Failed to cleanup /global_localization_lifecycle_node",
-                "node":   _GLOBAL_NODE,
-                "detail": out_clean,
-            }
-        )
-
-    print(f"  [lifecycle_stop] step 2 done — all steps complete\n")
-
-    return {
-        "accepted": True,
-        "action":   "lifecycle_stop",
-        "steps": [
-            {"node": _GLOBAL_NODE, "transition": "deactivate", "ok": True, "detail": out_deact},
-            {"node": _GLOBAL_NODE, "transition": "cleanup",    "ok": True, "detail": out_clean},
-        ],
     }
 
 

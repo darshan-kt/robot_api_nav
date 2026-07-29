@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Smartphone, ShieldAlert, Home, BatteryCharging, ArrowUp, ArrowDown } from 'lucide-react';
+import { Smartphone, ShieldAlert, Home, BatteryCharging, ArrowUp, ArrowDown, Radar } from 'lucide-react';
 import { Header } from '../components/layout/Header';
 import { Card, Badge, Button } from '../components/ui/Layout';
 import { useToast } from '../components/ui/Toast';
@@ -11,8 +11,12 @@ import { GATEWAY_URL } from '../lib/config';
 export function RemoteControllerPage() {
     const { showToast } = useToast();
 
-    // Live LIDAR stream (/api/scan WebSocket — same source as Scan Observation)
-    const { connected: scanConnected, scan } = useScan();
+    // Live LIDAR stream (/api/scan WebSocket — same source as Scan Observation).
+    // Off by default: building each scan frame costs the gateway an O(n)
+    // pass over every beam, so it only runs while the user has this toggled
+    // on ("Scan Update" button below).
+    const [scanUpdateOn, setScanUpdateOn] = useState(false);
+    const { connected: scanConnected, scan } = useScan(scanUpdateOn);
     const scanRef = useRef(scan);
     scanRef.current = scan;
     const lidarLive = scanConnected && scan !== null;
@@ -540,6 +544,18 @@ export function RemoteControllerPage() {
                                 </p>
                             </div>
                             <div className="flex gap-2">
+                                <button
+                                    onClick={() => setScanUpdateOn(v => !v)}
+                                    title="Toggle live LIDAR scan updates (off by default to save robot CPU)"
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide transition-colors cursor-pointer ${
+                                        scanUpdateOn
+                                            ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
+                                            : 'bg-white/5 border-border text-textMuted hover:border-purple-500/40 hover:text-purple-300'
+                                    }`}
+                                >
+                                    <Radar className="w-3 h-3" />
+                                    Scan Update: {scanUpdateOn ? 'ON' : 'OFF'}
+                                </button>
                                 <div className={`animate-pulse flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide ${
                                     lidarLive ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-rose-500/20 border-rose-500/50 text-rose-400'
                                 }`}>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Route, Target, Send, CheckCircle2, Upload, RotateCcw } from 'lucide-react';
+import { Route, Target, Send, CheckCircle2, Upload, RotateCcw, Radar } from 'lucide-react';
 import { localDb } from '../lib/localDb';
 import { Header } from '../components/layout/Header';
 import { Card, Skeleton, Button } from '../components/ui/Layout';
@@ -17,7 +17,10 @@ export function SimpleRoutePlannerPage() {
     const { showToast } = useToast();
     const { user } = useAuth();
     const { connected, robotState } = useTelemetry();
-    const { connected: scanConnected, scan } = useScan();
+    // Off by default: building each scan frame costs the gateway an O(n)
+    // pass over every beam, so it only runs while toggled on below.
+    const [scanUpdateOn, setScanUpdateOn] = useState(false);
+    const { connected: scanConnected, scan } = useScan(scanUpdateOn);
     const { localisation } = useLocalisation();
     const { plan } = usePlan();
     const scanCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -870,13 +873,27 @@ const [isUploading, setIsUploading] = useState(false);
                             <Card hover={false} className="flex-1 flex flex-col overflow-hidden">
                                 <div className="px-6 py-4 border-b border-border/50 bg-black/10 flex items-center justify-between">
                                     <h3 className="text-xs font-mono font-bold uppercase tracking-widest text-textMuted">Scan Observation</h3>
-                                    <div className={`animate-pulse flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide ${
-                                        scanConnected
-                                            ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
-                                            : 'bg-rose-500/20 border-rose-500/50 text-rose-400'
-                                    }`}>
-                                        <div className={`w-1.5 h-1.5 rounded-full ${scanConnected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-                                        {scanConnected ? 'Live' : 'No Signal'}
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => setScanUpdateOn(v => !v)}
+                                            title="Toggle live LIDAR scan updates (off by default to save robot CPU)"
+                                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide transition-colors cursor-pointer ${
+                                                scanUpdateOn
+                                                    ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
+                                                    : 'bg-white/5 border-border text-textMuted hover:border-purple-500/40 hover:text-purple-300'
+                                            }`}
+                                        >
+                                            <Radar className="w-3 h-3" />
+                                            Scan Update: {scanUpdateOn ? 'ON' : 'OFF'}
+                                        </button>
+                                        <div className={`animate-pulse flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide ${
+                                            scanConnected
+                                                ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
+                                                : 'bg-rose-500/20 border-rose-500/50 text-rose-400'
+                                        }`}>
+                                            <div className={`w-1.5 h-1.5 rounded-full ${scanConnected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                                            {scanConnected ? 'Live' : 'No Signal'}
+                                        </div>
                                     </div>
                                 </div>
 

@@ -1,0 +1,43 @@
+// generated from rosidl_adapter/resource/action.idl.em
+// with input from hive_interfaces/action/ExecuteBehavior.action
+// generated code does not contain a copyright notice
+
+#include "geometry_msgs/msg/PoseStamped.idl"
+
+module hive_interfaces {
+  module action {
+    @verbatim (language="comment", text=
+      "Goal")
+    struct ExecuteBehavior_Goal {
+      int32 id;
+
+      string behavior_name;
+
+      string task_id;
+
+      geometry_msgs::msg::PoseStamped pose;
+
+      string json_payload;
+    };
+    @verbatim (language="comment", text=
+      "Result")
+    struct ExecuteBehavior_Result {
+      boolean success;
+
+      string outcome_text;
+
+      string log_file;
+
+      string metrics_json;
+    };
+    @verbatim (language="comment", text=
+      "Feedback")
+    struct ExecuteBehavior_Feedback {
+      float progress_percent;
+
+      string current_state;
+
+      string comment;
+    };
+  };
+};
