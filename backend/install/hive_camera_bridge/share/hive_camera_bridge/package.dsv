@@ -1,0 +1,9 @@
+source;share/hive_camera_bridge/hook/pythonpath.ps1
+source;share/hive_camera_bridge/hook/pythonpath.dsv
+source;share/hive_camera_bridge/hook/pythonpath.sh
+source;share/hive_camera_bridge/hook/ament_prefix_path.ps1
+source;share/hive_camera_bridge/hook/ament_prefix_path.dsv
+source;share/hive_camera_bridge/hook/ament_prefix_path.sh
+source;../../build/hive_camera_bridge/share/hive_camera_bridge/hook/pythonpath_develop.ps1
+source;../../build/hive_camera_bridge/share/hive_camera_bridge/hook/pythonpath_develop.dsv
+source;../../build/hive_camera_bridge/share/hive_camera_bridge/hook/pythonpath_develop.sh

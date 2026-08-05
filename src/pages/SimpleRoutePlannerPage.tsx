@@ -19,8 +19,12 @@ export function SimpleRoutePlannerPage() {
     const { connected, robotState } = useTelemetry();
     // Off by default: building each scan frame costs the gateway an O(n)
     // pass over every beam, so it only runs while toggled on below.
+    // Two independent toggles share one WS subscription — scanUpdateOn
+    // drives the sidebar polar plot, scanOnMapOn drives the on-map overlay
+    // below, either one live is enough to turn the underlying stream on.
     const [scanUpdateOn, setScanUpdateOn] = useState(false);
-    const { connected: scanConnected, scan } = useScan(scanUpdateOn);
+    const [scanOnMapOn, setScanOnMapOn] = useState(false);
+    const { connected: scanConnected, scan } = useScan(scanUpdateOn || scanOnMapOn);
     const { localisation } = useLocalisation();
     const { plan } = usePlan();
     const scanCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -396,6 +400,53 @@ const [isUploading, setIsUploading] = useState(false);
                 ctx.fill();
             }
 
+            // Live LIDAR scan, projected onto the map — anchored to the SAME
+            // AMCL pose (localisation.x/y/yaw) that drives the marker below,
+            // through the SAME map-frame→image-pixel→canvas-pixel formula
+            // used for waypoints/plan/AMCL position. That's deliberate: reusing
+            // one pipeline end to end is what keeps scan, AMCL marker, and map
+            // aligned — a second, slightly-different conversion here would drift.
+            if (scanOnMapOn && scan && localisation && mapImage) {
+                const scale = Math.min(canvas.width / mapImage.width, canvas.height / mapImage.height);
+                const drawX = (canvas.width / 2) - (mapImage.width / 2) * scale;
+                const drawY = (canvas.height / 2) - (mapImage.height / 2) * scale;
+
+                const robotMapX = localisation.x;
+                const robotMapY = localisation.y;
+                const yaw = localisation.yaw;      // raw ROS yaw (CCW-positive, Y-up) — NOT
+                                                    // the canvas-negated one the heading arrow
+                                                    // uses below; the rotation here happens in
+                                                    // map-metre space, before the Y-flip that
+                                                    // the pixel conversion applies.
+                const cosYaw = Math.cos(yaw);
+                const sinYaw = Math.sin(yaw);
+
+                ctx.fillStyle = 'rgba(244, 63, 94, 0.8)';   // rose — obstacle/scan convention
+                                                             // shared with the Remote Controller HUD
+                for (let i = 0; i < scan.ranges.length; i++) {
+                    const r = scan.ranges[i];
+                    if (r === null || r < scan.range_min || r > scan.range_max) continue;
+
+                    // Beam → robot-local metres (ROS convention: x=forward, y=left)
+                    const beamAngle = scan.angle_min + i * scan.angle_increment;
+                    const localX = r * Math.cos(beamAngle);
+                    const localY = r * Math.sin(beamAngle);
+
+                    // Rotate into the map frame by the robot's AMCL heading, then translate
+                    const mapX = robotMapX + (localX * cosYaw - localY * sinYaw);
+                    const mapY = robotMapY + (localX * sinYaw + localY * cosYaw);
+
+                    // map-frame metres → image pixel → canvas pixel (identical to
+                    // the AMCL marker and waypoint-send conversions)
+                    const imgX = (mapX - mapMeta.origin_x) / mapMeta.resolution;
+                    const imgY = (mapImage.height - 1) - (mapY - mapMeta.origin_y) / mapMeta.resolution;
+                    const px = drawX + imgX * scale;
+                    const py = drawY + imgY * scale;
+
+                    ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
+                }
+            }
+
             // AMCL localisation — GPS-style blinking position marker
             if (localisation && mapImage) {
                 // map frame (metres) → image pixels → canvas pixels
@@ -502,7 +553,7 @@ const [isUploading, setIsUploading] = useState(false);
             frameId = requestAnimationFrame(loop);
         });
         return () => cancelAnimationFrame(frameId);
-    }, [waypoints, mapImage, pendingWaypoint, mousePos, robotState, localisation, plan, mapMeta]);
+    }, [waypoints, mapImage, pendingWaypoint, mousePos, robotState, localisation, plan, mapMeta, scan, scanOnMapOn]);
 
     // Handle telemetry complete mission states
     useEffect(() => {
@@ -792,6 +843,26 @@ const [isUploading, setIsUploading] = useState(false);
                                     onClick={handleCanvasClick}
                                     onMouseMove={handleCanvasMouseMove}
                                 />
+
+                                {/* Scan-on-map overlay toggle — shares the /api/scan stream
+                                    with the sidebar's Scan Observation panel (see scanOnMapOn
+                                    above); turning this on is enough by itself to light up
+                                    the stream even if the sidebar toggle is off. */}
+                                <button
+                                    onClick={() => setScanOnMapOn(v => !v)}
+                                    title="Overlay live LIDAR returns on the map, anchored to the AMCL pose (off by default to save robot CPU)"
+                                    className={`absolute top-4 right-4 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-[10px] font-mono font-bold tracking-wide transition-colors cursor-pointer shadow-lg ${
+                                        scanOnMapOn
+                                            ? 'bg-rose-500/20 border-rose-500/50 text-rose-300'
+                                            : 'bg-black/50 border-border text-textMuted hover:border-rose-500/40 hover:text-rose-300'
+                                    }`}
+                                >
+                                    <Radar className="w-3 h-3" />
+                                    Scan on Map: {scanOnMapOn ? 'ON' : 'OFF'}
+                                    {scanOnMapOn && (
+                                        <div className={`w-1.5 h-1.5 rounded-full ml-0.5 ${scanConnected && scan ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+                                    )}
+                                </button>
 
                                 {drawMode && (
                                     <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-amber-500 text-background px-4 py-2 rounded-full text-xs font-bold shadow-2xl animate-fade-in flex items-center gap-2">

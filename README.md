@@ -9,7 +9,8 @@ Gazebo simulation for development.
   AMCL localisation in real time
 - **Dashboard** – live telemetry and system status
 - **Emergency Stop** – one-click software stop (cancels navigation, forces zero twist)
-- **Remote Controller** – keyboard/joystick teleop with live LIDAR HUD
+- **Remote Controller** – keyboard/joystick teleop with a live LIDAR HUD
+  and a live WebRTC camera feed side by side
   (design & teleop strategy: [docs/RemoteController.md](docs/RemoteController.md))
 
 > **2026 refactor: MQTT split.** The FastAPI gateway used to *be* a ROS 2 node
@@ -18,6 +19,11 @@ Gazebo simulation for development.
 > speaks MQTT; every ROS 2 dependency moved into a new `backend/hive_mqtt_bridge`
 > node. See [Architecture](#-architecture) for why and [Safety notes](#-safety-notes)
 > for what that means for the teleop/e-stop control path.
+>
+> **Same cycle: live camera over WebRTC.** A second boundary node,
+> `backend/hive_camera_bridge`, streams the robot's camera to the browser —
+> see [Camera / WebRTC](#-camera--webrtc) for why this is deliberately
+> *not* another MQTT topic.
 
 ---
 
@@ -47,6 +53,12 @@ CycloneDDS domain with each other — that's an unavoidable ROS 2 DDS discovery
 requirement between ROS 2 participants. `appstore`, `mqtt-broker`, and `hive_api`
 do **not** — they're plain network services on the default Docker bridge network,
 reachable by hostname/port like anything else.
+
+One more path doesn't fit the MQTT picture at all: the Remote Controller's
+camera feed. `backend/hive_camera_bridge` streams the robot's RGB camera to
+the browser over **WebRTC**, signaled through the gateway (`POST
+/webrtc/offer`) but carried directly between browser and robot once
+connected — see [Camera / WebRTC](#-camera--webrtc).
 
 ---
 
@@ -161,9 +173,12 @@ appstore/
 │   │   ├── app/                #     main.py (routes), mqtt_client.py, geometry.py, config.py
 │   │   ├── requirements.txt
 │   │   └── Dockerfile          #     python:3.11-slim — no ROS base image
-│   ├── hive_mqtt_bridge/       #   ROS2 <-> MQTT bridge (Python/rclpy) — the ONLY package that
-│   │   │                       #     imports both rclpy and paho-mqtt
+│   ├── hive_mqtt_bridge/       #   ROS2 <-> MQTT bridge (Python/rclpy) — imports both rclpy
+│   │   │                       #     and paho-mqtt
 │   │   └── hive_mqtt_bridge/bridge_node.py
+│   ├── hive_camera_bridge/     #   ROS2 <-> WebRTC bridge (Python/rclpy) — imports both rclpy
+│   │   │                       #     and aiortc; the ONLY other package that isn't pure ROS 2
+│   │   └── hive_camera_bridge/camera_node.py
 │   ├── hive_bt_server/         #   Behavior router action server (C++)
 │   ├── bt_runner/               #   BehaviorTree.CPP executor + BT XML trees (C++)
 │   ├── hive_interfaces/         #   ExecuteBehavior.action definition
@@ -183,6 +198,63 @@ appstore/
 
 `backend/build_api/`, `install_api/`, `log_api/` are gone — hive_api never runs
 colcon anymore, there's nothing for them to hold.
+
+---
+
+## 📷 Camera / WebRTC
+
+Live video from the robot's camera does **not** ride the MQTT bus above.
+MQTT is a message broker for small, discrete messages — it isn't built to
+carry a continuous RTP stream, and trying to force one through it would mean
+either choking the broker or reinventing a video transport badly. WebRTC
+already solves "get real-time video from A to B, negotiate a codec, punch
+through NAT" — so that's what `backend/hive_camera_bridge` uses instead.
+
+```
+  appstore (browser)                     hive_api                    hive_camera_bridge
+                                                                      (robotstore, :8766)
+       │ 1. POST /webrtc/offer {sdp}         │                              │
+       ├─────────────────────────────────────▶                              │
+       │                                      │ 2. POST /offer (proxied)    │
+       │                                      ├─────────────────────────────▶
+       │                                      │◀─────────────────────────────┤
+       │◀─────────────────────────────────────┤ 3. {sdp: answer}            │
+       │                                      │                              │
+       │ 4. RTP video — direct, ICE-negotiated, bypasses hive_api entirely   │
+       │◀═════════════════════════════════════════════════════════════════▶│
+```
+
+Only steps 1–3 (a one-time, kilobyte-sized SDP exchange) go through the
+gateway — same single-entry-point rule the browser follows for everything
+else. Step 4, the actual video, is direct: aiortc gathers ICE host
+candidates from `robotstore`'s network interfaces (host-networked, so its
+LAN IP is directly reachable), and on the same LAN today that's enough —
+no STUN/TURN server needed. That stops being true the moment robot and
+browser are on different networks — MQTT's broker-relay trick doesn't
+extend to bulk media the way it did for commands/telemetry; a TURN relay
+would be the equivalent piece if this ever splits across networks.
+
+**Camera source:** `turtlebot_mcp_ros2` spawns `turtlebot3_burger_cam` (not
+plain `burger`) specifically to get an RGB camera in the sim — burger's
+footprint/physics are identical, it just adds a camera plugin publishing
+`/camera/image_raw`. That's the topic actually confirmed via `ros2 topic
+list` on a running sim — the model's SDF declares the camera plugin under a
+`depth_cam` namespace, but that doesn't end up being the effective topic
+name at runtime, so trust `ros2 topic list` over the SDF if this ever
+changes again. `hive_camera_bridge` subscribes to `CAMERA_TOPIC` (env var,
+default `/camera/image_raw`), converts frames with `cv_bridge`, and feeds
+them into an aiortc `VideoStreamTrack` at `CAMERA_FPS` (default 15 — a
+Pi5-minded default, not a hardware limit; tune it in `docker-compose.yml`
+if you have headroom or need less).
+
+**Enabling it:** off by default in the Remote Controller UI (same "Scan
+Update" convention the LIDAR toggle already uses) — encoding video on the
+robot side costs real CPU, so nothing runs until the operator flips
+"Camera Feed: ON."
+
+**Multiple viewers:** each browser tab gets its own `RTCPeerConnection` and
+video track, but all of them read the same underlying frame buffer — N
+viewers costs one ROS 2 subscription, not N.
 
 ---
 
@@ -206,9 +278,10 @@ cd ~/appstore/turtlebot_mcp_ros2
 make build_sim
 ```
 
-`build_robotstore` is the slow step (ROS 2 + CycloneDDS source build + colcon).
-`build_hive_api` now takes seconds — it's a `python:3.11-slim` image with four
-pip packages, no ROS toolchain involved at all.
+`build_robotstore` is the slow step (ROS 2 + CycloneDDS source build + colcon,
+now also pulling in `aiortc`'s native deps for `hive_camera_bridge`).
+`build_hive_api` now takes seconds — it's a `python:3.11-slim` image with a
+handful of pip packages, no ROS toolchain involved at all.
 
 ### 2. Run
 
@@ -231,6 +304,11 @@ failure. Once you see `[mqtt] connected to mqtt-broker:1883` the gateway is
 live. `GET /health` reports `mqtt_connected` (gateway↔broker) and
 `robot_alive` (bridge↔robot, via the `health` topic + its Last Will)
 separately, so you can tell the two failure modes apart.
+
+`hive_camera_bridge` comes up alongside `hive_mqtt_bridge` in the same
+`robotstore` launch — check `make logs-robotstore` for `hive_camera_bridge
+subscribed to /camera/image_raw, signaling on :8766` to confirm it's
+ready before turning on the Remote Controller's camera feed.
 
 The sim boots in its own readiness-gated sequence: Gazebo world → robot spawn at
 `SPAWN_X/SPAWN_Y/SPAWN_YAW` → Nav2 → AMCL initial pose **auto-set to the spawn
@@ -267,9 +345,9 @@ cd ~/appstore/turtlebot_mcp_ros2 && make stop
 
 ## 🔌 Gateway API (port 1717)
 
-Every path and payload shape below is unchanged from before the MQTT refactor —
-this is a transport swap behind a stable contract, so `src/hooks/*` needed zero
-changes.
+Every path and payload shape below (except `/webrtc/offer`, new) is unchanged
+from before the MQTT refactor — a transport swap behind a stable contract, so
+`src/hooks/*` needed zero changes for any of the pre-existing endpoints.
 
 | Endpoint | Type | Description |
 |---|---|---|
@@ -278,6 +356,7 @@ changes.
 | `GET /api/map` | REST | Operational `map.pgm` rendered as PNG |
 | `GET /api/map/meta` | REST | `map.yaml` (resolution, origin) for coordinate conversion |
 | `POST /tasks` | REST | Dispatch a mission (`id: 22` = multi-waypoint FollowRoute). Publishes `cmd/task`, waits up to 8s for `task/ack` |
+| `POST /webrtc/offer` | REST | Proxies a browser's SDP offer to `hive_camera_bridge`, relays back the answer. The only endpoint that isn't MQTT-backed — see [Camera / WebRTC](#-camera--webrtc) |
 | `/api/telemetry` | WS | `/odom` pose at ~1 Hz — `{x, y, theta}` |
 | `/api/scan` | WS | `/scan` LaserScan at ~1 Hz, opt-in via `{"type":"scan_toggle","enabled":true}` (drives the Scan Observation panel) |
 | `/api/localisation` | WS | `/amcl_pose` at ~1 Hz — `{x, y, yaw, frame_id, age_s}` (drives the GPS marker) |
@@ -298,15 +377,15 @@ changes.
 | `make build_hive_api` | `docker compose build hive_api` — plain image build, no colcon |
 | `make run-api` | Launch just `hive_api` (+ its `mqtt-broker` dependency) via compose |
 | `make run-bash` | Shell inside a throwaway gateway container |
-| `make build_robotstore` | Rebuild hive_bt_server + bt_runner + hive_mqtt_bridge (needed after C++ / Python / BT XML changes) |
+| `make build_robotstore` | Rebuild hive_bt_server + bt_runner + hive_mqtt_bridge + hive_camera_bridge (needed after C++ / Python / BT XML changes) |
 | `make logs-api` / `make logs-robotstore` / `make logs-broker` | Tail container logs |
 | `make clean` | Delete robotstore's colcon artifacts (hive_api has none anymore) |
 
 Gateway Python changes hot-apply on `docker restart hive_api-api-arm` — `app/`
 is volume-mounted, same dev convenience as before, just without colcon in the
-loop. hive_mqtt_bridge is Python too but needs `make build_robotstore` to
-re-symlink into the colcon workspace (it's ROS 2 code, built the same way as
-hive_bt_server/bt_runner).
+loop. hive_mqtt_bridge and hive_camera_bridge are Python too but both need
+`make build_robotstore` to re-symlink into the colcon workspace (they're
+ROS 2 code, built the same way as hive_bt_server/bt_runner).
 
 ### simulation (`~/appstore/turtlebot_mcp_ros2`)
 
@@ -358,8 +437,8 @@ Robot spawn pose is set in the sim `docker-compose.yml` (`SPAWN_X`, `SPAWN_Y`,
    container together — two gzservers deadlock on port 11345.
 7. **Gateway Python changes** hot-apply on container restart
    (`docker restart hive_api-api-arm`) because `app/` is volume-mounted.
-   **hive_mqtt_bridge / hive_bt_server / bt_runner / BT XML changes** need
-   `make build_robotstore`.
+   **hive_mqtt_bridge / hive_camera_bridge / hive_bt_server / bt_runner / BT
+   XML changes** need `make build_robotstore`.
 8. **`hive_mqtt_bridge` needs `setup.cfg`, not just `setup.py`.** Same as any
    `ament_python` package — without it, colcon still builds successfully but
    installs the `console_scripts` entry point to the default `bin/` instead of
@@ -376,6 +455,23 @@ Robot spawn pose is set in the sim `docker-compose.yml` (`SPAWN_X`, `SPAWN_Y`,
     delivery, not that the bridge is actually receiving fresh ROS 2 data. Use
     `ros2 action send_goal` / `ros2 topic echo --once` on the ROS 2 side and
     watch `mosquitto_sub` update on the MQTT side to confirm the whole chain.
+11. **`POST /webrtc/offer` returns 503 with no camera picture, not a hang.**
+    That means `hive_api` couldn't reach `hive_camera_bridge` at
+    `CAMERA_BRIDGE_URL` (default `http://host.docker.internal:8766`) — check
+    `robotstore` is actually up and that `extra_hosts:
+    host.docker.internal:host-gateway` is still in `hive_api`'s compose
+    service (it's what lets a bridge-network container reach a
+    host-networked sibling's port without putting `hive_api` back on host
+    networking).
+12. **No camera feed even though everything's "connected."** `TURTLEBOT3_MODEL`
+    in `turtlebot_mcp_ros2/docker-compose.yml` has to be `burger_cam` (or
+    `waffle`/`waffle_pi`), not plain `burger` — plain burger has no camera at
+    all, so `/camera/image_raw` never publishes and `hive_camera_bridge`
+    streams black frames forever without erroring (by design — see its
+    module docstring on why it doesn't block on a missing topic). Also
+    remember the sim image needs `make build_sim` rerun after this changed —
+    it's a separate Makefile/compose project from the main stack, easy to
+    leave on a stale image that predates `burger_cam`.
 
 ---
 
@@ -399,6 +495,19 @@ Robot spawn pose is set in the sim `docker-compose.yml` (`SPAWN_X`, `SPAWN_Y`,
   already existed.
 - **Broker auth posture** — see Gotcha #3 above. Don't ship the anonymous
   default past a private network boundary.
+- **The camera feed is read-only sensor data with no control-plane
+  implications** — unlike teleop, there's no deadman/watchdog concern here,
+  a stalled or dropped video connection can't move the robot. Its actual
+  cost is CPU: encoding is real work even at 320×240/15fps, which is exactly
+  why it's opt-in per browser tab rather than always-on (see [Camera /
+  WebRTC](#-camera--webrtc)) — on a resource-constrained Pi5, an operator
+  leaving the feed on in an idle tab is the realistic failure mode to watch
+  for, not a safety one.
+- **WebRTC signaling has no auth either, same posture as the broker.**
+  `POST /webrtc/offer` accepts any SDP offer the gateway is asked to proxy.
+  Fine on the same private network as everything else in this repo; treat it
+  as part of the same hardening pass as Gotcha #3 if this ever needs to be
+  reachable beyond that.
 
 ---
 

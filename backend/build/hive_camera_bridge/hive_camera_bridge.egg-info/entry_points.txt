@@ -1,0 +1,3 @@
+[console_scripts]
+camera_bridge = hive_camera_bridge.camera_node:main
+

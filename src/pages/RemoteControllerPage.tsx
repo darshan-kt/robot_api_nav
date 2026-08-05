@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Smartphone, ShieldAlert, Home, BatteryCharging, ArrowUp, ArrowDown, Radar } from 'lucide-react';
+import { Smartphone, ShieldAlert, Home, BatteryCharging, ArrowUp, ArrowDown, Radar, Video, VideoOff } from 'lucide-react';
 import { Header } from '../components/layout/Header';
 import { Card, Badge, Button } from '../components/ui/Layout';
 import { useToast } from '../components/ui/Toast';
 import { localDb } from '../lib/localDb';
 import { useScan } from '../hooks/useScan';
 import { useVelocityCtrl } from '../hooks/useVelocityCtrl';
+import { useCameraStream } from '../hooks/useCameraStream';
 import { GATEWAY_URL } from '../lib/config';
 
 export function RemoteControllerPage() {
@@ -20,6 +21,12 @@ export function RemoteControllerPage() {
     const scanRef = useRef(scan);
     scanRef.current = scan;
     const lidarLive = scanConnected && scan !== null;
+
+    // Live camera feed (WebRTC, signaled via gateway POST /webrtc/offer →
+    // hive_camera_bridge). Same "off by default" convention as the LIDAR
+    // scan toggle above — encoding video on the robot side costs real CPU.
+    const [cameraOn, setCameraOn] = useState(false);
+    const { videoRef, connected: cameraConnected, connecting: cameraConnecting } = useCameraStream(cameraOn);
 
     // Teleop command channel (/api/velocity_ctrl WebSocket → ROS /cmd_vel)
     const { connected: ctrlConnected, sendVelocity } = useVelocityCtrl();
@@ -531,56 +538,141 @@ export function RemoteControllerPage() {
             />
 
             <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-8 py-8 md:py-10 grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-8">
-                {/* Visual HUD Map/Lidar Panel */}
+                {/* Navigation HUD — LIDAR + Camera side by side, each its own
+                    panel with independent connection state, sharing one
+                    telemetry strip below (position/heading/velocity apply
+                    to the robot as a whole, not to either feed alone). */}
                 <div className="space-y-6 flex flex-col">
-                    <Card hover={false} className="p-6 flex-1 flex flex-col justify-center items-center relative overflow-hidden">
-                        <div className="w-full flex justify-between items-center mb-6">
-                            <div>
-                                <h2 className="text-lg font-bold text-text">LIDAR Navigation HUD</h2>
-                                <p className="text-[10px] font-mono text-textMuted uppercase tracking-widest">
-                                    {connected && robotState 
-                                        ? `X: ${robotState.x.toFixed(1)} Y: ${robotState.y.toFixed(1)} θ: ${(robotState.theta * 180 / Math.PI).toFixed(0)}°`
-                                        : 'Active Laser Scanner Telemetry'}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* LIDAR panel */}
+                        <Card hover={false} className="p-6 flex flex-col items-center relative overflow-hidden">
+                            <div className="w-full flex justify-between items-start mb-6">
+                                <div>
+                                    <h2 className="text-base font-bold text-text">LIDAR HUD</h2>
+                                    <p className="text-[10px] font-mono text-textMuted uppercase tracking-widest">
+                                        Laser Scanner
+                                    </p>
+                                </div>
+                                <div className="flex flex-col items-end gap-1.5">
+                                    <button
+                                        onClick={() => setScanUpdateOn(v => !v)}
+                                        title="Toggle live LIDAR scan updates (off by default to save robot CPU)"
+                                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide transition-colors cursor-pointer ${
+                                            scanUpdateOn
+                                                ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
+                                                : 'bg-white/5 border-border text-textMuted hover:border-purple-500/40 hover:text-purple-300'
+                                        }`}
+                                    >
+                                        <Radar className="w-3 h-3" />
+                                        {scanUpdateOn ? 'ON' : 'OFF'}
+                                    </button>
+                                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide ${
+                                        lidarLive ? 'animate-pulse bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-rose-500/20 border-rose-500/50 text-rose-400'
+                                    }`}>
+                                        <div className={`w-1.5 h-1.5 rounded-full ${lidarLive ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                                        {lidarLive ? 'LIVE' : 'OFFLINE'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Radar sweeping feed */}
+                            <div className="relative w-full aspect-square rounded-full border border-emerald-500/20 bg-black/40 shadow-inner flex items-center justify-center p-2">
+                                <canvas ref={radarCanvasRef} width={400} height={400} className="w-full h-full rounded-full" />
+                                <div className="absolute bottom-6 left-6 font-mono text-[9px] text-emerald-400 bg-emerald-950/40 px-2.5 py-1.5 rounded-lg border border-emerald-500/20">
+                                    {scan ? `${scan.ranges.filter(r => r !== null).length}/${scan.ranges.length} BEAMS` : 'SCAN: — '}
+                                </div>
+                                <div className="absolute bottom-6 right-6 font-mono text-[9px] text-emerald-400 bg-emerald-950/40 px-2.5 py-1.5 rounded-lg border border-emerald-500/20">
+                                    {scan ? `RANGE: ${scan.range_max.toFixed(1)}m` : 'RANGE: —'}
+                                </div>
+                            </div>
+                        </Card>
+
+                        {/* Camera panel — WebRTC feed from hive_camera_bridge.
+                            Deliberately NOT forced into the LIDAR dial's
+                            circle: a camera has a real rectangular field of
+                            view and a radial sensor doesn't, so matching
+                            shapes would just crop the picture to look
+                            uniform. 4:3 frame (the model's actual 320x240
+                            resolution) shown in full via object-contain —
+                            an operator relying on this for situational
+                            awareness needs the whole frame, not a crop. */}
+                        <Card hover={false} className="p-6 flex flex-col items-center relative overflow-hidden">
+                            <div className="w-full flex justify-between items-start mb-6">
+                                <div>
+                                    <h2 className="text-base font-bold text-text">Camera Feed</h2>
+                                    <p className="text-[10px] font-mono text-textMuted uppercase tracking-widest">
+                                        WebRTC · /camera
+                                    </p>
+                                </div>
+                                <div className="flex flex-col items-end gap-1.5">
+                                    <button
+                                        onClick={() => setCameraOn(v => !v)}
+                                        title="Toggle the live WebRTC camera feed (off by default to save robot CPU)"
+                                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide transition-colors cursor-pointer ${
+                                            cameraOn
+                                                ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
+                                                : 'bg-white/5 border-border text-textMuted hover:border-purple-500/40 hover:text-purple-300'
+                                        }`}
+                                    >
+                                        {cameraOn ? <Video className="w-3 h-3" /> : <VideoOff className="w-3 h-3" />}
+                                        {cameraOn ? 'ON' : 'OFF'}
+                                    </button>
+                                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide ${
+                                        cameraConnected ? 'animate-pulse bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-rose-500/20 border-rose-500/50 text-rose-400'
+                                    }`}>
+                                        <div className={`w-1.5 h-1.5 rounded-full ${cameraConnected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                                        {cameraConnected ? 'LIVE' : 'OFFLINE'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="relative w-full aspect-square flex items-center justify-center">
+                                <div className="relative w-full aspect-[4/3] rounded-xl border border-purple-500/20 bg-black shadow-inner overflow-hidden flex items-center justify-center">
+                                    <video
+                                        ref={videoRef}
+                                        autoPlay
+                                        muted
+                                        playsInline
+                                        className="w-full h-full object-contain"
+                                    />
+                                    {!cameraConnected && (
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70">
+                                            <VideoOff className="w-7 h-7 text-textMuted" />
+                                            <span className="font-mono text-[10px] text-textMuted uppercase tracking-widest px-4 text-center">
+                                                {!cameraOn ? 'Feed Off' : cameraConnecting ? 'Negotiating…' : 'No Signal'}
+                                            </span>
+                                        </div>
+                                    )}
+                                    <div className="absolute bottom-3 left-3 font-mono text-[9px] text-purple-300 bg-purple-950/50 px-2.5 py-1.5 rounded-lg border border-purple-500/20">
+                                        RGB · 320×240
+                                    </div>
+                                    <div className="absolute bottom-3 right-3 font-mono text-[9px] text-purple-300 bg-purple-950/50 px-2.5 py-1.5 rounded-lg border border-purple-500/20">
+                                        WEBRTC
+                                    </div>
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+
+                    {/* Shared robot telemetry — applies to the robot as a
+                        whole, not to either feed above */}
+                    <Card hover={false} className="p-6">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className="bg-black/30 px-4 py-3 rounded-xl border border-white/5 text-center">
+                                <span className="text-[10px] font-mono text-textMuted uppercase">Position</span>
+                                <p className="text-sm font-mono font-bold text-text mt-1">
+                                    {connected && robotState
+                                        ? `${robotState.x.toFixed(1)}, ${robotState.y.toFixed(1)}`
+                                        : '—, —'}
                                 </p>
                             </div>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setScanUpdateOn(v => !v)}
-                                    title="Toggle live LIDAR scan updates (off by default to save robot CPU)"
-                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide transition-colors cursor-pointer ${
-                                        scanUpdateOn
-                                            ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
-                                            : 'bg-white/5 border-border text-textMuted hover:border-purple-500/40 hover:text-purple-300'
-                                    }`}
-                                >
-                                    <Radar className="w-3 h-3" />
-                                    Scan Update: {scanUpdateOn ? 'ON' : 'OFF'}
-                                </button>
-                                <div className={`animate-pulse flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide ${
-                                    lidarLive ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-rose-500/20 border-rose-500/50 text-rose-400'
-                                }`}>
-                                    <div className={`w-1.5 h-1.5 rounded-full ${lidarLive ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-                                    {lidarLive ? 'LIDAR LIVE' : 'BRIDGE OFFLINE'}
-                                </div>
-                                {latency !== null && (
-                                    <Badge type="blue">{latency} ms</Badge>
-                                )}
+                            <div className="bg-black/30 px-4 py-3 rounded-xl border border-white/5 text-center">
+                                <span className="text-[10px] font-mono text-textMuted uppercase">Heading</span>
+                                <p className="text-sm font-mono font-bold text-text mt-1">
+                                    {connected && robotState ? `${(robotState.theta * 180 / Math.PI).toFixed(0)}°` : '—'}
+                                </p>
+                                {latency !== null && <Badge type="blue" className="mt-1.5">{latency} ms</Badge>}
                             </div>
-                        </div>
-
-                        {/* Radar sweeping feed */}
-                        <div className="relative w-full max-w-[420px] aspect-square rounded-full border border-emerald-500/20 bg-black/40 shadow-inner flex items-center justify-center p-2 mb-4">
-                            <canvas ref={radarCanvasRef} width={400} height={400} className="w-full h-full rounded-full" />
-                            <div className="absolute bottom-6 left-6 font-mono text-[9px] text-emerald-400 bg-emerald-950/40 px-2.5 py-1.5 rounded-lg border border-emerald-500/20">
-                                {scan ? `${scan.ranges.filter(r => r !== null).length}/${scan.ranges.length} BEAMS` : 'SCAN: — '}
-                            </div>
-                            <div className="absolute bottom-6 right-6 font-mono text-[9px] text-emerald-400 bg-emerald-950/40 px-2.5 py-1.5 rounded-lg border border-emerald-500/20">
-                                {scan ? `RANGE: ${scan.range_max.toFixed(1)}m` : 'RANGE: —'}
-                            </div>
-                        </div>
-
-                        {/* Control Velocities metrics */}
-                        <div className="grid grid-cols-2 gap-4 w-full max-w-[420px]">
                             <div className="bg-black/30 px-4 py-3 rounded-xl border border-white/5 text-center">
                                 <span className="text-[10px] font-mono text-textMuted uppercase">Linear Velocity</span>
                                 <p className="text-lg font-mono font-bold text-emerald-400 mt-0.5">{linearVel.toFixed(2)} m/s</p>

@@ -2,7 +2,7 @@
 """
 hive_camera_bridge — streams a ROS 2 camera topic to the browser over WebRTC.
 
-Subscribes to sensor_msgs/Image (default /depth_cam/image_raw — the RGB feed
+Subscribes to sensor_msgs/Image (default /camera/image_raw — the RGB feed
 from the turtlebot3_burger_cam Gazebo model, see turtlebot_mcp_ros2's
 docker-compose.yml) and exposes an aiohttp HTTP server with one endpoint,
 POST /offer, implementing WebRTC's standard SDP offer/answer exchange.
@@ -34,7 +34,7 @@ import av
 from aiohttp import web
 from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
 
-CAMERA_TOPIC   = os.environ.get('CAMERA_TOPIC', '/depth_cam/image_raw')
+CAMERA_TOPIC   = os.environ.get('CAMERA_TOPIC', '/camera/image_raw')
 SIGNALING_PORT = int(os.environ.get('CAMERA_SIGNALING_PORT', '8766'))
 TARGET_FPS     = float(os.environ.get('CAMERA_FPS', '15'))
 

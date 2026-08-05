@@ -41,7 +41,7 @@ PLATFORM_FRONTEND ?= $(HOST_PLATFORM)
 ARCH_FRONTEND     := $(subst linux/,,$(PLATFORM_FRONTEND))
 FRONTEND_IMAGE    ?= robot_appstore:$(ARCH_FRONTEND)
 
-# ── RobotStore (hive_bt_server + bt_runner + hive_mqtt_bridge) ───────────────
+# ── RobotStore (hive_bt_server + bt_runner + hive_mqtt_bridge + hive_camera_bridge) ──
 HIVE_STORE_DIR      ?= $(BACKEND_DIR)
 PLATFORM_ROBOTSTORE ?= $(HOST_PLATFORM)
 ARCH_ROBOTSTORE     := $(subst linux/,,$(PLATFORM_ROBOTSTORE))
@@ -78,7 +78,7 @@ help: platform
 	@echo "  make run-api                  Launch gateway (+ its mqtt-broker dep) via compose"
 	@echo "  make run-bash                 Open shell inside a throwaway gateway container"
 	@echo ""
-	@echo "  ── RobotStore (hive_bt_server + bt_runner + hive_mqtt_bridge) ──────"
+	@echo "  ── RobotStore (+ hive_mqtt_bridge + hive_camera_bridge) ─────────────"
 	@echo "  make build_image_robotstore   Build robotstore Docker image"
 	@echo "  make build_robotstore         colcon-build robotstore workspace inside image"
 	@echo ""
@@ -167,6 +167,7 @@ build_robotstore: build_image_robotstore
 		-v $(HIVE_STORE_DIR)/hive_bt_server:/home/charlie/ros2_ws/src/hive_bt_server \
 		-v $(HIVE_STORE_DIR)/hive_interfaces:/home/charlie/ros2_ws/src/hive_interfaces \
 		-v $(HIVE_STORE_DIR)/hive_mqtt_bridge:/home/charlie/ros2_ws/src/hive_mqtt_bridge \
+		-v $(HIVE_STORE_DIR)/hive_camera_bridge:/home/charlie/ros2_ws/src/hive_camera_bridge \
 		-v $(HIVE_STORE_DIR)/cyclonedds.xml:/home/charlie/ros2_ws/cyclonedds.xml \
 		-v $(HIVE_STORE_DIR)/docker:/home/charlie/ros2_ws/docker \
 		-v $(HIVE_STORE_DIR)/build:/home/charlie/ros2_ws/build \

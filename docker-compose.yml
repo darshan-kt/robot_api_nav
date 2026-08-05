@@ -16,6 +16,17 @@
 # That's why hive_api dropped from 1.5 vCPU/768M to 0.5/256M — it no longer
 # carries a ROS 2 workspace — freeing exactly the budget the new mqtt-broker
 # service needs (0.5/512M), so the total ceiling is unchanged from before.
+#
+# NOTE on the WebRTC camera feed (same 2026 cycle): hive_camera_bridge is a
+# SECOND boundary node alongside hive_mqtt_bridge, but for a reason MQTT
+# doesn't apply to — live video is bulk, real-time media, not something a
+# pub/sub message bus is built to carry. Signaling (the one-time SDP
+# offer/answer handshake) is proxied through hive_api's /webrtc/offer, same
+# single-entry-point rule as everything else the browser calls. The actual
+# video (RTP) does NOT — it flows directly browser <-> hive_camera_bridge
+# over an ICE-negotiated path once signaling completes, which is why
+# hive_api needs a route to robotstore's host-networked port 8766 (see
+# extra_hosts below) even though it never touches the video bytes itself.
 services:
 
   # ── React frontend — production build served by nginx ───────────────────────
@@ -98,6 +109,18 @@ services:
       - MQTT_PORT=1883
       - ROBOT_ID=robot-1
       - ROBOT_MAP_DIR=/robot_map   # map.pgm served by GET /api/map
+      # hive_camera_bridge's WebRTC signaling endpoint. host.docker.internal
+      # (below) resolves to the Pi5's own IP from inside this container —
+      # robotstore is host-networked, so port 8766 bound there is really
+      # bound on the host, same as mqtt-broker's published 1883.
+      - CAMERA_BRIDGE_URL=http://host.docker.internal:8766
+
+    # Lets a container on the default bridge network reach services bound
+    # directly on the host (robotstore's host-networked port 8766) without
+    # putting hive_api back on host networking itself. Standard Docker
+    # Compose feature since 20.10, Linux and Docker Desktop both support it.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
     volumes:
       # Source bind-mounted over the image's baked-in copy — Python changes
@@ -117,10 +140,12 @@ services:
           cpus: "0.5"
           memory: 256M
 
-  # ── RobotStore: hive_bt_server + bt_runner + hive_mqtt_bridge (backend/) ────
+  # ── RobotStore: hive_bt_server + bt_runner + hive_mqtt_bridge +
+  #    hive_camera_bridge (backend/) ─────────────────────────────────────────
   # Pre-build image + workspace first:  make build_robotstore
-  # The ONLY container where rclpy and MQTT both appear — hive_mqtt_bridge is
-  # the single ROS2↔MQTT translation point (see backend/hive_mqtt_bridge/).
+  # hive_mqtt_bridge is the ROS2↔MQTT translation point; hive_camera_bridge
+  # is the ROS2↔WebRTC one — the only two nodes in this container that know
+  # anything exists outside ROS 2.
   robotstore:
     image: robotstore_image:${ARCH_TAG:-amd64}
     # Suffixed -arm: avoids colliding with sibling checkouts (see appstore
@@ -146,6 +171,13 @@ services:
       - MQTT_HOST=localhost
       - MQTT_PORT=1883
       - ROBOT_ID=robot-1
+      # hive_camera_bridge — RGB topic from the turtlebot3_burger_cam model
+      # (see turtlebot_mcp_ros2/docker-compose.yml). Signaling on :8766 is
+      # reachable at the host's own IP because of network_mode: host, same
+      # as mqtt-broker's published 1883 — no separate 'ports:' entry needed.
+      - CAMERA_TOPIC=/camera/image_raw
+      - CAMERA_SIGNALING_PORT=8766
+      - CAMERA_FPS=15
 
     volumes:
       # ROS 2 package sources
@@ -153,6 +185,7 @@ services:
       - ./backend/hive_bt_server:/home/charlie/ros2_ws/src/hive_bt_server
       - ./backend/hive_interfaces:/home/charlie/ros2_ws/src/hive_interfaces
       - ./backend/hive_mqtt_bridge:/home/charlie/ros2_ws/src/hive_mqtt_bridge
+      - ./backend/hive_camera_bridge:/home/charlie/ros2_ws/src/hive_camera_bridge
       # CycloneDDS config
       - ./backend/cyclonedds.xml:/home/charlie/ros2_ws/cyclonedds.xml
       # Entrypoint + docker helpers
@@ -165,7 +198,8 @@ services:
 
     # Entrypoint sources the workspace and runs:
     #   ros2 launch bt_runner hive_server_runner.launch.py
-    # (which now also includes hive_mqtt_bridge — see that launch file)
+    # (which now also includes hive_mqtt_bridge + hive_camera_bridge —
+    # see that launch file)
     command: bash /home/charlie/ros2_ws/entrypoint_robotstore.sh
 
     depends_on:

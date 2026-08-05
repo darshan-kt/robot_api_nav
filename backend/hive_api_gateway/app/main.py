@@ -2,11 +2,14 @@
 hive_api_gateway — plain Python FastAPI service, ZERO ROS 2 dependency.
 
 Talks to the robot only via MQTT (see mqtt_client.py) plus a local map.pgm
-file mount. This is the entire point of the 2026 refactor: this process can
-now run `pip install -r requirements.txt && python -m app.main` on a laptop,
-in CI, or on a cloud VM — no rclpy, no colcon workspace, no shared DDS domain
-with the robot. All ROS 2 code moved to backend/hive_mqtt_bridge/, which is
-the only place that still imports rclpy.
+file mount — with one narrow exception: POST /webrtc/offer proxies the
+browser's WebRTC SDP offer to hive_camera_bridge's signaling endpoint over
+plain HTTP, because live video isn't something MQTT is built to carry. This
+is the entire point of the 2026 refactor: this process can now run
+`pip install -r requirements.txt && python -m app.main` on a laptop, in CI,
+or on a cloud VM — no rclpy, no colcon workspace, no shared DDS domain with
+the robot. All ROS 2 code moved to backend/hive_mqtt_bridge/ and
+backend/hive_camera_bridge/, the only two places that still import rclpy.
 
 Every REST/WebSocket path and payload shape below is unchanged from the old
 ApiNode-backed gateway — the frontend hooks in src/hooks/ need zero changes.
@@ -21,6 +24,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,16 +37,21 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(name)s] %(message
 logger = logging.getLogger('gateway')
 
 mqtt_client = GatewayMqttClient()
+http_client: httpx.AsyncClient | None = None   # set in lifespan — see /webrtc/offer
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global http_client
     logger.info(
         f"[gateway] starting — MQTT target {config.MQTT_HOST}:{config.MQTT_PORT}, "
-        f"robot_id={config.ROBOT_ID}, map_dir={config.ROBOT_MAP_DIR}"
+        f"robot_id={config.ROBOT_ID}, map_dir={config.ROBOT_MAP_DIR}, "
+        f"camera_bridge={config.CAMERA_BRIDGE_URL}"
     )
     mqtt_client.start()
+    http_client = httpx.AsyncClient(timeout=config.CAMERA_OFFER_TIMEOUT_S)
     yield
+    await http_client.aclose()
     await mqtt_client.stop()
 
 
@@ -345,6 +354,42 @@ async def scan_ws(ws: WebSocket):
                 await ws.send_json(mqtt_client.latest_scan)
     except (WebSocketDisconnect, Exception):
         pass
+
+
+# =============================================================================
+# WebRTC signaling proxy — the one endpoint that talks HTTP straight to a
+# robot-side node instead of going through MQTT. See hive_camera_bridge's
+# module docstring for why: signaling is a one-time, small SDP exchange that
+# can ride any transport, but the video itself (RTP, continuous) needs a
+# direct path and flows browser <-> hive_camera_bridge directly once this
+# call completes — it never touches this process.
+# =============================================================================
+
+@api_app.post("/webrtc/offer")
+async def webrtc_offer(payload: dict):
+    """
+    Proxy a browser's WebRTC SDP offer to hive_camera_bridge and relay back
+    its answer unchanged.
+
+    Request/response body: {"sdp": "...", "type": "offer"|"answer"}
+
+    curl -X POST http://localhost:1717/webrtc/offer \\
+      -H 'Content-Type: application/json' \\
+      -d '{"sdp": "v=0...", "type": "offer"}'
+    """
+    if http_client is None:
+        raise HTTPException(status_code=503, detail="Gateway not ready")
+
+    try:
+        resp = await http_client.post(f"{config.CAMERA_BRIDGE_URL}/offer", json=payload)
+        resp.raise_for_status()
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Camera bridge did not answer in time")
+    except httpx.HTTPError as exc:
+        logger.warning(f"[/webrtc/offer] camera bridge unreachable: {exc}")
+        raise HTTPException(status_code=503, detail="Camera bridge unreachable — is robotstore running?")
+
+    return resp.json()
 
 
 @api_app.get("/health")

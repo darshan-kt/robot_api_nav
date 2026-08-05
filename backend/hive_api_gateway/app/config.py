@@ -31,6 +31,12 @@ MAP_RESOURCE_DIR = Path(__file__).resolve().parent.parent / "resource"
 # fallback path with margin).
 TASK_ACK_TIMEOUT_S = 8.0
 
+# hive_camera_bridge's WebRTC signaling endpoint (backend/hive_camera_bridge).
+# /webrtc/offer proxies the browser's SDP offer here — see that module's
+# docstring for why signaling is proxied but the video itself isn't.
+CAMERA_BRIDGE_URL     = os.environ.get('CAMERA_BRIDGE_URL', 'http://localhost:8766')
+CAMERA_OFFER_TIMEOUT_S = 6.0
+
 
 def topic(suffix: str) -> str:
     return f'{TOPIC_PREFIX}/{suffix}'
