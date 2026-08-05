@@ -147,8 +147,14 @@ requirement, and neither of them speaks DDS anymore.
 | `health` | bridge → gateway | 1 | **yes** (+ LWT) | `{ros_ready, robot_alive, topics{...}}` |
 | `task/ack` | bridge → gateway | 1 | no | reply to `cmd/task`: `{task_id, accepted, behavior, nav_mode, ...}` |
 | `task/result` | bridge → gateway | 1 | no | `{task_id, success, outcome_text}` |
+| `goal/ack` | bridge → gateway | 1 | no | reply to `cmd/goal`: `{goal_id, accepted, waypoint_count, detail?}` |
+| `goal/result` | bridge → gateway | 1 | no | `{goal_id, status}` — `action_msgs/GoalStatus` code, logged not surfaced synchronously |
+| `cancel_nav/ack` | bridge → gateway | 1 | no | reply to `cmd/cancel_nav`: `{request_id, cancelled}` |
 | `cmd/task` | gateway → bridge | 1 | no | mission dispatch (was `POST /tasks`) |
 | `cmd/velocity` | gateway → bridge | 0 | no | teleop `{linear, angular}` (was `/api/velocity_ctrl`) |
+| `cmd/goal` | gateway → bridge | 1 | no | direct Nav2 route, `{goal_id, poses[]}` (was `POST /nav_goal`) |
+| `cmd/cancel_nav` | gateway → bridge | 1 | no | `{request_id}` — cancel the active NavigateThroughPoses goal (was `POST /cancel_nav`) |
+| `cmd/set_pose` | gateway → bridge | 1 | no | `{pose, covariance?}`, fire-and-forget — set AMCL's initial pose (was `POST /set_pose`) |
 
 `health` carries an MQTT **Last Will and Testament**: if `hive_mqtt_bridge` dies
 or its connection drops uncleanly, the broker publishes `robot_alive:false` on
@@ -356,12 +362,25 @@ from before the MQTT refactor — a transport swap behind a stable contract, so
 | `GET /api/map` | REST | Operational `map.pgm` rendered as PNG |
 | `GET /api/map/meta` | REST | `map.yaml` (resolution, origin) for coordinate conversion |
 | `POST /tasks` | REST | Dispatch a mission (`id: 22` = multi-waypoint FollowRoute). Publishes `cmd/task`, waits up to 8s for `task/ack` |
+| `POST /nav_goal` | REST | Direct Nav2 dispatch — publishes `cmd/goal` with the WHOLE waypoint list; bridge sends one `NavigateThroughPoses` action goal. Waits up to 6s for `goal/ack` (accept/reject), not for the route to finish. Bypasses Hive/BT entirely |
+| `POST /cancel_nav` | REST | Cancels whichever `NavigateThroughPoses` goal is active (from `/nav_goal` or `/tasks`' Nav2-fallback path). `{"cancelled": false}` is a legitimate "nothing was running" answer, not an error |
+| `POST /set_pose` | REST | Sets AMCL's initial pose — publishes `cmd/set_pose`, bridge publishes once to `/initialpose`. Fire-and-forget, same semantics as `ros2 topic pub -1` — no ack, `/initialpose` has nothing to accept/reject |
 | `POST /webrtc/offer` | REST | Proxies a browser's SDP offer to `hive_camera_bridge`, relays back the answer. The only endpoint that isn't MQTT-backed — see [Camera / WebRTC](#-camera--webrtc) |
 | `/api/telemetry` | WS | `/odom` pose at ~1 Hz — `{x, y, theta}` |
 | `/api/scan` | WS | `/scan` LaserScan at ~1 Hz, opt-in via `{"type":"scan_toggle","enabled":true}` (drives the Scan Observation panel) |
 | `/api/localisation` | WS | `/amcl_pose` at ~1 Hz — `{x, y, yaw, frame_id, age_s}` (drives the GPS marker) |
 | `/api/plan` | WS | Nav2 global planner `/plan` at 2 Hz — `{points: [{x, y}, ...]}` (drives the live path overlay; empty = idle) |
 | `/api/velocity_ctrl` | WS | Teleop: client streams `{type: "cmd_vel", linear, angular}` at 10 Hz while driving → `hive/<id>/cmd/velocity` → bridge → `geometry_msgs/Twist` on `/cmd_vel`. One zero frame on release; 400 ms deadman here + an independent 500 ms deadman on the bridge zero the robot if either half of the link dies |
+
+### Three ways to move the robot — pick deliberately
+
+| Path | Goes through | Use when |
+|---|---|---|
+| `POST /tasks` | Hive BT server → `bt_runner` → Nav2 | You want retries, pause/cancel, and feedback on a multi-waypoint mission |
+| `POST /nav_goal` | Direct to Nav2's `NavigateThroughPoses` action | You want the whole route driven straight by Nav2, no BT involved — same idea as RViz's 2D Nav Goal, but multi-waypoint |
+| `/api/velocity_ctrl` | Direct to `/cmd_vel` | Manual teleop, closed-loop human control |
+
+`/nav_goal` and `/api/velocity_ctrl` both skip the Hive/BT layer on purpose — same reasoning in both cases: BT-managed navigation exists for missions that need monitoring, not for a single ad-hoc command. `POST /cancel_nav` is the stop button for whichever one is currently driving through `NavigateThroughPoses` — it doesn't reach into Hive/BT missions dispatched via `/tasks` when Hive itself is available (that's a separate pause/cancel surface the BT layer owns, not this one).
 
 ---
 
@@ -472,6 +491,17 @@ Robot spawn pose is set in the sim `docker-compose.yml` (`SPAWN_X`, `SPAWN_Y`,
     remember the sim image needs `make build_sim` rerun after this changed —
     it's a separate Makefile/compose project from the main stack, easy to
     leave on a stale image that predates `burger_cam`.
+13. **`make build`/`make build_robotstore` should never prompt for a
+    password.** Colcon runs inside the robotstore container as UID 1001
+    (`charlie`), so `backend/build`, `install`, and `log` end up owned by a
+    UID your host user doesn't have — the old Makefile used `sudo rm -rf` to
+    clear them before each rebuild, which hangs waiting for a password in
+    non-interactive contexts (`make` piped, run from some IDE terminals,
+    etc.) and looks like the build silently stalling. Fixed by cleaning from
+    *inside* a throwaway container running as root instead — never touches
+    host sudo. If you still see a password prompt anywhere in the build
+    chain, `grep -n sudo Makefile` and report it; there shouldn't be any
+    left.
 
 ---
 

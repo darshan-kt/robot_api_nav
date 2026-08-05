@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Route, Target, Send, CheckCircle2, Upload, RotateCcw, Radar } from 'lucide-react';
+import { Route, Target, Send, CheckCircle2, Upload, RotateCcw, Radar, Navigation, XCircle, LocateFixed } from 'lucide-react';
 import { localDb } from '../lib/localDb';
 import { Header } from '../components/layout/Header';
 import { Card, Skeleton, Button } from '../components/ui/Layout';
@@ -93,6 +93,12 @@ export function SimpleRoutePlannerPage() {
     const [isSending, setIsSending] = useState(false);
 const [isUploading, setIsUploading] = useState(false);
     const [sentSuccess, setSentSuccess] = useState(false);
+    // Direct Nav2 "Send Goal" — separate loading/success state from the
+    // Hive mission dispatch above, since it's an independent action.
+    const [isSendingGoal, setIsSendingGoal] = useState(false);
+    const [goalSentSuccess, setGoalSentSuccess] = useState(false);
+    const [isCancelling, setIsCancelling] = useState(false);
+    const [isSettingPose, setIsSettingPose] = useState(false);
     const [mapImage, setMapImage] = useState<HTMLImageElement | null>(null);
     const [mapMeta, setMapMeta] = useState({ resolution: 0.05, origin_x: -10.0, origin_y: -10.0 });
     const [pendingWaypoint, setPendingWaypoint] = useState<{ x: number, y: number } | null>(null);
@@ -680,43 +686,48 @@ const [isUploading, setIsUploading] = useState(false);
         }
     };
 
+    // Canvas-pixel waypoint → ROS map-frame PoseStamped-shaped dict. Shared
+    // by sendMission (all waypoints, via Hive/BT) and sendGoal (one
+    // waypoint, direct to Nav2) so both paths convert coordinates
+    // identically — the map image is drawn centred on the 900×600 canvas,
+    // scaled to fit, same as every other pixel→map conversion on this page.
+    const waypointToPose = (wp: Waypoint) => {
+        const canvas  = canvasRef.current;
+        const imgEl   = mapImage;
+        const imgW    = imgEl?.width  ?? 384;
+        const imgH    = imgEl?.height ?? 384;
+        const canvasW = canvas?.width  ?? 900;
+        const canvasH = canvas?.height ?? 600;
+        const scale   = Math.min(canvasW / imgW, canvasH / imgH);
+        const drawX   = (canvasW - imgW * scale) / 2;
+        const drawY   = (canvasH - imgH * scale) / 2;
+
+        const imgX  = (wp.x - drawX) / scale;
+        const imgY  = (wp.y - drawY) / scale;
+        const mapX  = mapMeta.origin_x + imgX * mapMeta.resolution;
+        // Y axis is flipped: row 0 = top of image = maximum map Y
+        const mapY  = mapMeta.origin_y + (imgH - 1 - imgY) * mapMeta.resolution;
+        // Canvas theta uses Y-down convention; ROS uses Y-up → negate
+        const theta = -(wp.theta ?? 0);
+        const sinH  = Math.sin(theta / 2);
+        const cosH  = Math.cos(theta / 2);
+        console.log(`[wp ${wp.order}] canvas(${wp.x.toFixed(1)},${wp.y.toFixed(1)}) → img(${imgX.toFixed(1)},${imgY.toFixed(1)}) → map(${mapX.toFixed(3)},${mapY.toFixed(3)}) θ=${(theta*180/Math.PI).toFixed(1)}°`);
+        return {
+            header: { frame_id: 'map' },
+            pose: {
+                position:    { x: mapX, y: mapY, z: 0.0 },
+                orientation: { x: 0.0, y: 0.0, z: sinH, w: cosH },
+            },
+        };
+    };
+
     const sendMission = async () => {
         if (waypoints.length === 0 || !missionId || eStopActive) return;
         try {
             setIsSending(true);
             await localDb.updateMissionStatus(missionId, 'sent');
 
-            // Convert canvas pixels → image pixels → ROS map-frame metres.
-            // The map image is drawn centred on the 900×600 canvas, scaled to fit.
-            const canvas  = canvasRef.current;
-            const imgEl   = mapImage;
-            const imgW    = imgEl?.width  ?? 384;
-            const imgH    = imgEl?.height ?? 384;
-            const canvasW = canvas?.width  ?? 900;
-            const canvasH = canvas?.height ?? 600;
-            const scale   = Math.min(canvasW / imgW, canvasH / imgH);
-            const drawX   = (canvasW - imgW * scale) / 2;
-            const drawY   = (canvasH - imgH * scale) / 2;
-
-            const poses = waypoints.map(wp => {
-                const imgX  = (wp.x - drawX) / scale;
-                const imgY  = (wp.y - drawY) / scale;
-                const mapX  = mapMeta.origin_x + imgX * mapMeta.resolution;
-                // Y axis is flipped: row 0 = top of image = maximum map Y
-                const mapY  = mapMeta.origin_y + (imgH - 1 - imgY) * mapMeta.resolution;
-                // Canvas theta uses Y-down convention; ROS uses Y-up → negate
-                const theta = -(wp.theta ?? 0);
-                const sinH  = Math.sin(theta / 2);
-                const cosH  = Math.cos(theta / 2);
-                console.log(`[wp ${wp.order}] canvas(${wp.x.toFixed(1)},${wp.y.toFixed(1)}) → img(${imgX.toFixed(1)},${imgY.toFixed(1)}) → map(${mapX.toFixed(3)},${mapY.toFixed(3)}) θ=${(theta*180/Math.PI).toFixed(1)}°`);
-                return {
-                    header: { frame_id: 'map' },
-                    pose: {
-                        position:    { x: mapX, y: mapY, z: 0.0 },
-                        orientation: { x: 0.0, y: 0.0, z: sinH, w: cosH },
-                    },
-                };
-            });
+            const poses = waypoints.map(waypointToPose);
 
             const response = await fetch(`${GATEWAY_URL}/tasks`, {
                 method: 'POST',
@@ -752,6 +763,119 @@ const [isUploading, setIsUploading] = useState(false);
             }
         } finally {
             setIsSending(false);
+        }
+    };
+
+    // Direct Nav2 dispatch — POST /nav_goal → gateway → cmd/goal (MQTT) →
+    // bridge sends the WHOLE waypoint list as one NavigateThroughPoses
+    // action goal, bypassing the Hive route planner entirely. Unlike the
+    // old single-pose /goal_pose version, this genuinely carries a route —
+    // NavigateThroughPoses accepts multiple poses, so every waypoint on the
+    // map goes out in one call. Deliberately doesn't touch
+    // missionId/localDb: this isn't part of the mission-tracking system,
+    // it's a direct, ad-hoc dispatch.
+    const sendGoal = async () => {
+        if (waypoints.length === 0 || eStopActive) return;
+        try {
+            setIsSendingGoal(true);
+            const poses = waypoints.map(waypointToPose);
+
+            const response = await fetch(`${GATEWAY_URL}/nav_goal`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ poses }),
+            });
+
+            if (response.ok) {
+                setGoalSentSuccess(true);
+                showToast(
+                    `Route (${waypoints.length} waypoint${waypoints.length > 1 ? 's' : ''}) dispatched directly to Nav2.`,
+                    'success'
+                );
+                setTimeout(() => setGoalSentSuccess(false), 3000);
+            } else {
+                const body = await response.json().catch(() => ({}));
+                const detail = body?.detail ?? response.statusText;
+                showToast(`Gateway error ${response.status}: ${detail}`, 'error');
+            }
+        } catch (err: any) {
+            const isNetErr = err instanceof TypeError && err.message.toLowerCase().includes('fetch');
+            if (isNetErr) {
+                showToast(`Cannot reach gateway at ${GATEWAY_URL} — is it running?`, 'error');
+            } else {
+                showToast(err.message || 'Send goal failed', 'error');
+            }
+        } finally {
+            setIsSendingGoal(false);
+        }
+    };
+
+    // POST /cancel_nav → gateway → cmd/cancel_nav → bridge cancels whatever
+    // NavigateThroughPoses goal is active (from either sendGoal above or
+    // /tasks' own Nav2-fallback path). Deliberately NOT gated on
+    // waypoints.length or eStopActive — cancelling is a stop action, it
+    // should stay available even with the map cleared or mid-e-stop.
+    const cancelNav = async () => {
+        try {
+            setIsCancelling(true);
+            const response = await fetch(`${GATEWAY_URL}/cancel_nav`, { method: 'POST' });
+            const body = await response.json().catch(() => ({}));
+            if (response.ok) {
+                showToast(
+                    body.cancelled ? 'Navigation cancelled.' : (body.detail || 'Nothing to cancel — no active direct-dispatch goal.'),
+                    body.cancelled ? 'success' : 'info'
+                );
+            } else {
+                showToast(`Gateway error ${response.status}: ${body?.detail ?? response.statusText}`, 'error');
+            }
+        } catch (err: any) {
+            const isNetErr = err instanceof TypeError && err.message.toLowerCase().includes('fetch');
+            if (isNetErr) {
+                showToast(`Cannot reach gateway at ${GATEWAY_URL} — is it running?`, 'error');
+            } else {
+                showToast(err.message || 'Cancel failed', 'error');
+            }
+        } finally {
+            setIsCancelling(false);
+        }
+    };
+
+    // POST /set_pose → gateway → cmd/set_pose → bridge publishes once to
+    // /initialpose, re-seeding AMCL's estimate. Only one pose makes sense
+    // here (there's only one robot), so — same convention as sendGoal used
+    // to have — this uses the LAST placed waypoint.
+    const setInitPose = async () => {
+        if (waypoints.length === 0) return;
+        try {
+            setIsSettingPose(true);
+            const target = waypoints[waypoints.length - 1];
+            const pose = waypointToPose(target);
+
+            if (waypoints.length > 1) {
+                showToast(`Using WP-${target.order} (last placed) as the AMCL initial pose.`, 'info');
+            }
+
+            const response = await fetch(`${GATEWAY_URL}/set_pose`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pose }),
+            });
+
+            if (response.ok) {
+                showToast('Initial pose set — AMCL will re-localise from here.', 'success');
+            } else {
+                const body = await response.json().catch(() => ({}));
+                showToast(`Gateway error ${response.status}: ${body?.detail ?? response.statusText}`, 'error');
+            }
+        } catch (err: any) {
+            const isNetErr = err instanceof TypeError && err.message.toLowerCase().includes('fetch');
+            if (isNetErr) {
+                showToast(`Cannot reach gateway at ${GATEWAY_URL} — is it running?`, 'error');
+            } else {
+                showToast(err.message || 'Set pose failed', 'error');
+            }
+        } finally {
+            setIsSettingPose(false);
         }
     };
 
@@ -827,6 +951,20 @@ const [isUploading, setIsUploading] = useState(false);
                                         icon={Target}
                                     >
                                         {drawMode ? 'STOP PLACING' : 'PLACE WAYPOINT'}
+                                    </Button>
+                                    {/* POST /set_pose → /initialpose — re-seeds AMCL from the
+                                        last placed waypoint. Cyan to stay visually distinct from
+                                        amber (route planning), blue (direct nav dispatch), and
+                                        rose (cancel/danger) elsewhere on this page. */}
+                                    <Button
+                                        variant="outline"
+                                        onClick={setInitPose}
+                                        disabled={waypoints.length === 0 || isSettingPose}
+                                        title="Set AMCL's initial pose from the last placed waypoint"
+                                        className="text-cyan-400 border-cyan-500/40 hover:bg-cyan-500/10 disabled:opacity-40"
+                                        icon={LocateFixed}
+                                    >
+                                        {isSettingPose ? 'SETTING...' : 'INIT POSE'}
                                     </Button>
                                 </div>
                             </div>
@@ -1026,6 +1164,39 @@ const [isUploading, setIsUploading] = useState(false);
                                         icon={sentSuccess ? CheckCircle2 : Send}
                                     >
                                         {eStopActive ? 'E-STOP ACTIVE' : sentSuccess ? 'TELEMETRY CONFIRMED' : isSending ? 'TRANSMITTING...' : 'INITIATE NAVIGATION'}
+                                    </Button>
+
+                                    {/* Direct Nav2 dispatch — POST /nav_goal → NavigateThroughPoses,
+                                        bypasses the Hive route planner entirely. Deliberately a
+                                        lighter-weight outline button, not styled to compete with
+                                        INITIATE NAVIGATION above — this is the "send it straight to
+                                        Nav2" escape hatch, not the primary action. */}
+                                    <Button
+                                        variant="outline"
+                                        className={`w-full py-3 tracking-widest font-bold text-xs border-blue-500/40 text-blue-400 hover:bg-blue-500/10 ${goalSentSuccess ? 'bg-blue-500/10 border-blue-500/60' : ''}`}
+                                        disabled={waypoints.length === 0 || isSendingGoal || eStopActive}
+                                        onClick={sendGoal}
+                                        icon={goalSentSuccess ? CheckCircle2 : Navigation}
+                                    >
+                                        {eStopActive ? 'E-STOP ACTIVE' : goalSentSuccess ? 'GOAL PUBLISHED' : isSendingGoal ? 'PUBLISHING...' : 'SEND GOAL'}
+                                    </Button>
+                                    <p className="text-[9px] font-mono text-textMuted/70 text-center -mt-2">
+                                        Direct Nav2 dispatch → NavigateThroughPoses (bypasses Hive route planner)
+                                    </p>
+
+                                    {/* POST /cancel_nav — stops whatever NavigateThroughPoses goal
+                                        is active, from either SEND GOAL above or /tasks' own Nav2
+                                        fallback. Real danger styling (variant="danger"), and
+                                        deliberately NOT disabled by waypoints/eStop — a stop action
+                                        should stay reachable regardless of map/e-stop state. */}
+                                    <Button
+                                        variant="danger"
+                                        className="w-full py-3 tracking-widest font-bold text-xs"
+                                        disabled={isCancelling}
+                                        onClick={cancelNav}
+                                        icon={XCircle}
+                                    >
+                                        {isCancelling ? 'CANCELLING...' : 'CANCEL NAV'}
                                     </Button>
                                 </div>
                             </Card>

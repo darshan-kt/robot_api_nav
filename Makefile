@@ -148,8 +148,20 @@ build_image_robotstore:
 
 build_robotstore: build_image_robotstore
 	@echo "[build_robotstore] Cleaning stale build/install artifacts ..."
-	@sudo rm -rf $(HIVE_STORE_DIR)/build $(HIVE_STORE_DIR)/install $(HIVE_STORE_DIR)/log
 	@mkdir -p $(HIVE_STORE_DIR)/build $(HIVE_STORE_DIR)/install $(HIVE_STORE_DIR)/log
+	@# Colcon runs inside the container as UID 1001 (charlie, see Dockerfile-arm),
+	@# so on a host whose own user is a different UID, a plain host-side `rm -rf`
+	@# can't touch files it doesn't own — that's what the old `sudo rm -rf` here
+	@# was for, and why it stopped mid-`make build` asking for a password (no TTY
+	@# to answer it in that context). Clean from INSIDE a throwaway container
+	@# instead, running as root there — always has permission regardless of which
+	@# UID actually owns the stale files, and never touches host-level sudo at all.
+	@docker run --rm --user root \
+		-v $(HIVE_STORE_DIR)/build:/clean/build \
+		-v $(HIVE_STORE_DIR)/install:/clean/install \
+		-v $(HIVE_STORE_DIR)/log:/clean/log \
+		$(IMAGE_ROBOTSTORE) \
+		bash -c 'shopt -s nullglob dotglob; rm -rf /clean/build/* /clean/install/* /clean/log/*'
 	@chmod -R 777 $(HIVE_STORE_DIR)/build $(HIVE_STORE_DIR)/install $(HIVE_STORE_DIR)/log
 	@chmod +x $(HIVE_STORE_DIR)/docker/dev/entrypoint_robotstore.sh
 	@echo "[build_robotstore] Building robotstore ROS 2 workspace (hive_bt_server, bt_runner, hive_mqtt_bridge) ..."
@@ -221,7 +233,20 @@ rm: stop
 
 clean:
 	@echo "[clean] Removing colcon artifacts (robotstore workspace only — hive_api has none anymore) ..."
-	-sudo rm -rf $(BACKEND_DIR)/build $(BACKEND_DIR)/install $(BACKEND_DIR)/log
+	@# No `build_image_robotstore` prerequisite here (unlike build_robotstore),
+	@# so the image isn't guaranteed to exist yet — fall back to a plain host
+	@# rm if it doesn't (nothing container-owned to clean up in that case
+	@# anyway). See build_robotstore above for why this avoids sudo.
+	@if docker image inspect $(IMAGE_ROBOTSTORE) >/dev/null 2>&1; then \
+		docker run --rm --user root \
+			-v $(BACKEND_DIR)/build:/clean/build \
+			-v $(BACKEND_DIR)/install:/clean/install \
+			-v $(BACKEND_DIR)/log:/clean/log \
+			$(IMAGE_ROBOTSTORE) \
+			bash -c 'shopt -s nullglob dotglob; rm -rf /clean/build/* /clean/install/* /clean/log/*'; \
+	else \
+		rm -rf $(BACKEND_DIR)/build $(BACKEND_DIR)/install $(BACKEND_DIR)/log; \
+	fi
 
 # =============================================================================
 # Pi5 thermal/power check — only meaningful when run ON the Pi5 itself

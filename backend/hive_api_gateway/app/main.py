@@ -31,7 +31,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 
 from . import config, geometry
-from .mqtt_client import GatewayMqttClient, MqttUnavailable, TaskAckTimeout
+from .mqtt_client import GatewayMqttClient, MqttUnavailable, AckTimeout
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(name)s] %(message)s')
 logger = logging.getLogger('gateway')
@@ -138,7 +138,7 @@ async def create_task(payload: dict):
         ack = await mqtt_client.publish_task(cmd_payload)
     except MqttUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
-    except TaskAckTimeout as exc:
+    except AckTimeout as exc:
         raise HTTPException(status_code=504, detail=str(exc))
 
     if not ack.get("accepted"):
@@ -152,6 +152,148 @@ async def create_task(payload: dict):
         "source":         source,
         "nav_mode":       ack.get("nav_mode"),
     }
+
+
+@api_app.post("/nav_goal")
+async def nav_goal(payload: dict):
+    """
+    Direct Nav2 dispatch — publishes cmd/goal; the bridge sends the whole
+    waypoint list as ONE NavigateThroughPoses action goal straight to
+    Nav2's /navigate_through_poses, bypassing the Hive behavior-tree layer
+    entirely (same "skip Hive/BT" pattern /api/velocity_ctrl already uses
+    for /cmd_vel):
+
+        ros2 action send_goal /navigate_through_poses \\
+          nav2_msgs/action/NavigateThroughPoses "{poses: [...]}"
+
+    Waits for the bridge's goal/ack (accept/reject) before responding —
+    NOT for the robot to finish driving the route. Use POST /cancel_nav to
+    stop it early. Use POST /tasks instead when you want BT-managed
+    retries, pause/cancel, and feedback.
+
+    Accepts ONE of:
+    1. pixel_waypoints — [{"col": 254, "row": 389, "yaw_deg": -3}, ...]
+    2. poses — PoseStamped-shaped dicts, map-frame metres or pixel values
+       (auto-detected exactly like POST /tasks' poses[] does)
+
+    curl -X POST http://localhost:1717/nav_goal \\
+      -H 'Content-Type: application/json' \\
+      -d '{"poses": [
+             {"header": {"frame_id": "map"},
+              "pose": {"position": {"x": 1.0, "y": 1.0, "z": 0.0},
+                        "orientation": {"x": 0, "y": 0, "z": 0, "w": 1}}},
+             {"header": {"frame_id": "map"},
+              "pose": {"position": {"x": 2.0, "y": 0.0, "z": 0.0},
+                        "orientation": {"x": 0, "y": 0, "z": 0, "w": 1}}}
+           ]}'
+    """
+    pixel_wps = payload.get("pixel_waypoints", [])
+    raw_poses = payload.get("poses", [])
+
+    if pixel_wps:
+        poses  = geometry.pixels_to_poses(pixel_wps)
+        source = "pixel_waypoints"
+    elif raw_poses:
+        poses, was_converted = geometry.auto_convert_poses(raw_poses)
+        source = "poses_auto_converted" if was_converted else "poses_map_coords"
+    else:
+        raise HTTPException(422, "Provide pixel_waypoints[] or poses[]")
+
+    logger.info(f"[/nav_goal] dispatching {len(poses)} waypoint(s) directly to Nav2, source={source}")
+
+    try:
+        ack = await mqtt_client.publish_goal(poses)
+    except MqttUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except AckTimeout as exc:
+        raise HTTPException(status_code=504, detail=str(exc))
+
+    if not ack.get("accepted"):
+        raise HTTPException(status_code=500, detail=ack.get("detail", "Goal rejected"))
+
+    return {
+        "accepted":       True,
+        "goal_id":        ack.get("goal_id"),
+        "waypoint_count": ack.get("waypoint_count", len(poses)),
+        "source":         source,
+    }
+
+
+@api_app.post("/cancel_nav")
+async def cancel_nav():
+    """
+    Cancels whatever NavigateThroughPoses goal is currently active on the
+    robot — equivalent to:
+
+        ros2 action cancel /navigate_through_poses
+
+    Cancels regardless of whether the active goal came from POST /nav_goal
+    or POST /tasks' Nav2-fallback path (both dispatch through the same
+    action client on the bridge). Not an error if nothing was running —
+    check the response's "cancelled" field to tell the difference.
+
+    curl -X POST http://localhost:1717/cancel_nav
+    """
+    try:
+        ack = await mqtt_client.publish_cancel_nav()
+    except MqttUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except AckTimeout as exc:
+        raise HTTPException(status_code=504, detail=str(exc))
+
+    return {"cancelled": ack.get("cancelled", False), "detail": ack.get("detail")}
+
+
+@api_app.post("/set_pose")
+async def set_pose(payload: dict):
+    """
+    Sets AMCL's initial pose — publishes cmd/set_pose, the bridge publishes
+    once to /initialpose. Fire-and-forget, same semantics as:
+
+        ros2 topic pub -1 /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "{...}"
+
+    Same mechanism RViz's "2D Pose Estimate" tool uses, and the same one
+    turtlebot_mcp_ros2's entrypoint_sim.sh calls on sim boot to match
+    AMCL's estimate to the Gazebo spawn pose.
+
+    Accepts ONE of:
+    1. pixel_waypoint — {"col": 254, "row": 389, "yaw_deg": -3}
+    2. pose — a full PoseStamped-shaped dict, map-frame metres or pixel
+       values (auto-detected)
+
+    Optional top-level "covariance" (36 floats, row-major 6x6) — defaults
+    to the same estimate the sim's own boot sequence uses if omitted.
+
+    curl -X POST http://localhost:1717/set_pose \\
+      -H 'Content-Type: application/json' \\
+      -d '{"pose": {"header": {"frame_id": "map"},
+                     "pose": {"position": {"x": 0.0, "y": 0.0, "z": 0.0},
+                               "orientation": {"x": 0, "y": 0, "z": 0, "w": 1}}}}'
+    """
+    pixel_wp = payload.get("pixel_waypoint")
+    raw_pose = payload.get("pose")
+
+    if pixel_wp:
+        pose   = geometry.pixels_to_poses([pixel_wp])[0]
+        source = "pixel_waypoint"
+    elif raw_pose:
+        poses, was_converted = geometry.auto_convert_poses([raw_pose])
+        pose   = poses[0]
+        source = "pose_auto_converted" if was_converted else "pose_map_coords"
+    else:
+        raise HTTPException(422, "Provide pixel_waypoint or pose")
+
+    covariance = payload.get("covariance")
+
+    logger.info(f"[/set_pose] setting initial pose x={pose['pose']['position']['x']} "
+                f"y={pose['pose']['position']['y']} source={source}")
+
+    try:
+        await mqtt_client.publish_set_pose(pose, covariance)
+    except MqttUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    return {"accepted": True, "topic": "/initialpose", "source": source, "pose": pose}
 
 
 # =============================================================================

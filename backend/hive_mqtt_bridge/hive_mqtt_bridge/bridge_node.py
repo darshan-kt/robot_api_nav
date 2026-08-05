@@ -74,6 +74,20 @@ _TELEOP_MAX_ANGULAR = 1.0   # rad/s
 # leave the robot creeping.
 _CMD_VEL_WATCHDOG_S = 0.5
 
+# Default /initialpose covariance for cmd/set_pose when the caller doesn't
+# supply one — the SAME 6x6 row-major values turtlebot_mcp_ros2's own
+# entrypoint_sim.sh already publishes to auto-set AMCL's estimate on sim
+# boot (moderate x/y uncertainty, ~15° yaw std dev). AMCL only needs a
+# reasonable starting point; it converges from here via scan matching.
+_DEFAULT_INITIAL_POSE_COVARIANCE = (
+    0.25, 0.0,  0.0, 0.0, 0.0, 0.0,
+    0.0,  0.25, 0.0, 0.0, 0.0, 0.0,
+    0.0,  0.0,  0.0, 0.0, 0.0, 0.0,
+    0.0,  0.0,  0.0, 0.0, 0.0, 0.0,
+    0.0,  0.0,  0.0, 0.0, 0.0, 0.0,
+    0.0,  0.0,  0.0, 0.0, 0.0, 0.0685,
+)
+
 
 def _topic(suffix: str) -> str:
     return f'{TOPIC_PREFIX}/{suffix}'
@@ -158,8 +172,19 @@ class BridgeNode(Node):
 
         # ── ROS I/O (ported from hive_api_gateway's ApiNode) ────────────────
         self.client              = ActionClient(self, ExecuteBehavior, '/hive/execute_behavior')
+        # Direct Nav2 dispatch — cmd/goal (below) and /tasks' Nav2-fallback
+        # path both go through this ONE action client. Bypasses Hive/BT
+        # entirely, same spirit as /cmd_vel bypassing it for teleop.
         self.nav_through_client  = ActionClient(self, NavigateThroughPoses, '/navigate_through_poses')
         self.cmd_vel_pub         = self.create_publisher(Twist, '/cmd_vel', 10)
+        # AMCL initial pose — same topic RViz's "2D Pose Estimate" tool and
+        # the sim's own entrypoint_sim.sh boot sequence both publish to.
+        self.initial_pose_pub    = self.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
+
+        # Whichever NavigateThroughPoses goal is currently outstanding
+        # (from either dispatch path above) — cmd/cancel_nav cancels this.
+        self._nav_goal_lock         = threading.Lock()
+        self._active_nav_goal_handle = None
 
         self._latest_pose      = None
         self._latest_pose_time = 0.0
@@ -247,9 +272,15 @@ class BridgeNode(Node):
         if reason_code != 0:
             self.get_logger().error(f'[mqtt] connect failed: {reason_code}')
             return
-        self.get_logger().info('[mqtt] connected — subscribing to cmd/task, cmd/velocity')
+        self.get_logger().info(
+            '[mqtt] connected — subscribing to cmd/task, cmd/velocity, cmd/goal, '
+            'cmd/cancel_nav, cmd/set_pose'
+        )
         client.subscribe(_topic('cmd/task'), qos=1)
         client.subscribe(_topic('cmd/velocity'), qos=0)
+        client.subscribe(_topic('cmd/goal'), qos=1)
+        client.subscribe(_topic('cmd/cancel_nav'), qos=1)
+        client.subscribe(_topic('cmd/set_pose'), qos=1)
 
     def _on_mqtt_disconnect(self, client, userdata, disconnect_flags, reason_code, properties=None):
         self.get_logger().warning(f'[mqtt] disconnected (reason={reason_code}) — paho will auto-reconnect')
@@ -263,6 +294,15 @@ class BridgeNode(Node):
             threading.Thread(target=self._handle_cmd_task, args=(msg.payload,), daemon=True).start()
         elif msg.topic == _topic('cmd/velocity'):
             self._handle_cmd_velocity(msg.payload)
+        elif msg.topic == _topic('cmd/goal'):
+            # Same blocking-call concern as cmd/task above (wait_for_server).
+            threading.Thread(target=self._handle_cmd_goal, args=(msg.payload,), daemon=True).start()
+        elif msg.topic == _topic('cmd/cancel_nav'):
+            # cancel_goal_async() is non-blocking — safe to call inline.
+            self._handle_cmd_cancel_nav(msg.payload)
+        elif msg.topic == _topic('cmd/set_pose'):
+            # Plain message construction + publish — no blocking calls.
+            self._handle_cmd_set_pose(msg.payload)
 
     def _mqtt_publish(self, suffix: str, payload: dict, qos: int = 0, retain: bool = False):
         try:
@@ -376,6 +416,30 @@ class BridgeNode(Node):
             'waypoint_count': len(poses),
             'nav_mode':       'nav2_direct',
         }, qos=1)
+        # Same action client cmd/goal uses below — track it so cmd/cancel_nav
+        # can cancel a /tasks-triggered Nav2 fallback too, not just cmd/goal.
+        self._track_active_nav_goal(gh)
+
+    # =========================================================================
+    # Shared NavigateThroughPoses goal tracking — cmd/goal (below) and the
+    # /tasks Nav2-fallback path above both dispatch through the SAME action
+    # client, so cmd/cancel_nav needs one shared "what's currently active"
+    # slot rather than two, or it'd only ever be able to cancel whichever
+    # path happened to run last.
+    # =========================================================================
+
+    def _track_active_nav_goal(self, goal_handle, on_result=None):
+        with self._nav_goal_lock:
+            self._active_nav_goal_handle = goal_handle
+
+        def _on_done(result_future):
+            with self._nav_goal_lock:
+                if self._active_nav_goal_handle is goal_handle:
+                    self._active_nav_goal_handle = None
+            if on_result:
+                on_result(result_future)
+
+        goal_handle.get_result_async().add_done_callback(_on_done)
 
     # =========================================================================
     # cmd/velocity — teleop (was /api/velocity_ctrl)
@@ -414,6 +478,170 @@ class BridgeNode(Node):
         msg.linear.x  = float(linear_x)
         msg.angular.z = float(angular_z)
         self.cmd_vel_pub.publish(msg)
+
+    # =========================================================================
+    # cmd/goal — direct Nav2 dispatch via NavigateThroughPoses (was a plain
+    # `ros2 topic pub -1 /goal_pose ...`; replaced because /goal_pose only
+    # ever takes ONE pose, and this needs to carry a whole waypoint route in
+    # one call — the same array NavigateThroughPoses already expects):
+    #
+    #     ros2 action send_goal /navigate_through_poses \
+    #       nav2_msgs/action/NavigateThroughPoses "{poses: [...]}"
+    #
+    # Bypasses Hive/BT entirely, same as cmd/velocity does for /cmd_vel.
+    # Unlike cmd/velocity, this DOES ack (goal/ack) — an action has real
+    # accept/reject semantics worth surfacing, unlike a raw topic publish.
+    # It does NOT wait for the robot to finish driving the route; that's
+    # reported separately on goal/result. Use cmd/cancel_nav to stop early.
+    # =========================================================================
+
+    def _handle_cmd_goal(self, raw_payload: bytes):
+        try:
+            payload = json.loads(raw_payload)
+        except ValueError:
+            self.get_logger().warning('[cmd/goal] invalid JSON, dropping')
+            return
+
+        goal_id = payload.get('goal_id') or str(uuid.uuid4())
+        poses   = payload.get('poses', [])  # already map-frame — gateway did the pixel conversion
+
+        if not poses:
+            self._mqtt_publish('goal/ack', {'goal_id': goal_id, 'accepted': False,
+                                             'detail': 'No poses provided'}, qos=1)
+            return
+
+        if not self.nav_through_client.wait_for_server(timeout_sec=3.0):
+            self._mqtt_publish('goal/ack', {'goal_id': goal_id, 'accepted': False,
+                                             'detail': 'Nav2 NavigateThroughPoses unavailable'}, qos=1)
+            return
+
+        nav_goal = NavigateThroughPoses.Goal()
+        nav_goal.poses = [_dict_to_pose_stamped(p) for p in poses]
+        nav_goal.behavior_tree = ''
+
+        self.get_logger().info(f'[cmd/goal] dispatching {len(poses)} waypoint(s), goal={goal_id}')
+
+        send_goal_future = self.nav_through_client.send_goal_async(nav_goal)
+        send_goal_future.add_done_callback(
+            lambda fut: self._on_direct_nav_goal_response(fut, goal_id, len(poses))
+        )
+
+    def _on_direct_nav_goal_response(self, fut, goal_id, waypoint_count):
+        gh = fut.result()
+        if gh is None or not gh.accepted:
+            self._mqtt_publish('goal/ack', {'goal_id': goal_id, 'accepted': False,
+                                             'detail': 'Nav2 goal rejected'}, qos=1)
+            return
+
+        self.get_logger().info(f'[cmd/goal] NavigateThroughPoses accepted (goal={goal_id})')
+        self._mqtt_publish('goal/ack', {
+            'goal_id':        goal_id,
+            'accepted':       True,
+            'waypoint_count': waypoint_count,
+        }, qos=1)
+
+        self._track_active_nav_goal(
+            gh, on_result=lambda rf: self._on_direct_nav_result(goal_id, rf)
+        )
+
+    def _on_direct_nav_result(self, goal_id, result_future):
+        try:
+            result = result_future.result()
+            self._mqtt_publish('goal/result', {
+                'goal_id': goal_id,
+                'status':  result.status,   # action_msgs/GoalStatus constants
+            }, qos=1)
+        except Exception as exc:
+            self.get_logger().warning(f'[goal/result] could not fetch result for {goal_id}: {exc}')
+
+    # =========================================================================
+    # cmd/cancel_nav — cancel whatever NavigateThroughPoses goal is active
+    # (was `ros2 action cancel /navigate_through_poses`). Cancels regardless
+    # of whether it came from cmd/goal or /tasks' Nav2-fallback path — see
+    # _track_active_nav_goal above. A no-op is reported honestly (cancelled:
+    # false) rather than silently, so the operator knows nothing was running.
+    # =========================================================================
+
+    def _handle_cmd_cancel_nav(self, raw_payload: bytes):
+        try:
+            payload = json.loads(raw_payload) if raw_payload else {}
+        except ValueError:
+            payload = {}
+        request_id = payload.get('request_id')
+
+        with self._nav_goal_lock:
+            gh = self._active_nav_goal_handle
+
+        if gh is None:
+            self._mqtt_publish('cancel_nav/ack', {
+                'request_id': request_id, 'cancelled': False,
+                'detail': 'No active NavigateThroughPoses goal to cancel',
+            }, qos=1)
+            return
+
+        self.get_logger().info(f'[cmd/cancel_nav] cancelling active goal (request={request_id})')
+        cancel_future = gh.cancel_goal_async()
+
+        def _on_cancel_done(fut):
+            try:
+                response = fut.result()
+                cancelled = len(response.goals_canceling) > 0
+            except Exception as exc:
+                self.get_logger().warning(f'[cmd/cancel_nav] cancel request failed: {exc}')
+                cancelled = False
+            self.get_logger().info(f'[cmd/cancel_nav] {"cancelled" if cancelled else "not cancelled"}')
+            self._mqtt_publish('cancel_nav/ack', {
+                'request_id': request_id, 'cancelled': cancelled,
+            }, qos=1)
+
+        cancel_future.add_done_callback(_on_cancel_done)
+
+    # =========================================================================
+    # cmd/set_pose — set AMCL's initial pose (was `ros2 topic pub -1
+    # /initialpose ...`). Fire-and-forget like the old cmd/goal topic
+    # publish used to be — /initialpose has no accept/reject semantics to
+    # ack, it's just a topic AMCL listens to. Same mechanism RViz's "2D
+    # Pose Estimate" tool and the sim's own entrypoint_sim.sh both use.
+    # =========================================================================
+
+    def _handle_cmd_set_pose(self, raw_payload: bytes):
+        try:
+            payload = json.loads(raw_payload)
+        except ValueError:
+            self.get_logger().warning('[cmd/set_pose] invalid JSON, dropping')
+            return
+
+        pose_dict = payload.get('pose')
+        if not pose_dict:
+            self.get_logger().warning('[cmd/set_pose] missing "pose", dropping')
+            return
+
+        inner = pose_dict.get('pose', {})
+        pos   = inner.get('position', {})
+        ori   = inner.get('orientation', {})
+
+        msg = PoseWithCovarianceStamped()
+        msg.header.frame_id = pose_dict.get('header', {}).get('frame_id', 'map')
+        msg.header.stamp    = self.get_clock().now().to_msg()
+        msg.pose.pose.position.x    = float(pos.get('x', 0.0))
+        msg.pose.pose.position.y    = float(pos.get('y', 0.0))
+        msg.pose.pose.position.z    = float(pos.get('z', 0.0))
+        msg.pose.pose.orientation.x = float(ori.get('x', 0.0))
+        msg.pose.pose.orientation.y = float(ori.get('y', 0.0))
+        msg.pose.pose.orientation.z = float(ori.get('z', 0.0))
+        msg.pose.pose.orientation.w = float(ori.get('w', 1.0))
+
+        covariance = payload.get('covariance')
+        if covariance and len(covariance) == 36:
+            msg.pose.covariance = [float(v) for v in covariance]
+        else:
+            msg.pose.covariance = list(_DEFAULT_INITIAL_POSE_COVARIANCE)
+
+        self.initial_pose_pub.publish(msg)
+        self.get_logger().info(
+            f'[cmd/set_pose] published /initialpose x={msg.pose.pose.position.x:.3f} '
+            f'y={msg.pose.pose.position.y:.3f} frame={msg.header.frame_id}'
+        )
 
     # =========================================================================
     # ROS subscriptions -> cached state (unchanged from ApiNode)
