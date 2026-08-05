@@ -1,1 +1,0 @@
-/home/ros2_ws/build_api/hive_interfaces/ament_cmake_environment_hooks/local_setup.zsh

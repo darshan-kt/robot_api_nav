@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>hive_camera_bridge</name>
+  <version>0.1.0</version>
+  <description>
+    ROS 2 camera topic -&gt; WebRTC. Subscribes to the robot's RGB camera and
+    serves it to the browser over WebRTC (aiortc), signaled through
+    hive_api_gateway's /webrtc/offer proxy. Sibling to hive_mqtt_bridge —
+    same "boundary node" role, different protocol (media needs a direct
+    path; MQTT isn't built for bulk real-time video).
+  </description>
+  <maintainer email="dkg@hiverobots.dk">Darshan Gowda</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

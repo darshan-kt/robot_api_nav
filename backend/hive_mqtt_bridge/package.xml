@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>hive_mqtt_bridge</name>
+  <version>0.1.0</version>
+  <description>
+    ROS 2 &lt;-&gt; MQTT bridge. The only ROS 2 package that also speaks MQTT —
+    this is what lets backend/hive_api_gateway (FastAPI) be a plain Python
+    service with zero rclpy/colcon coupling.
+  </description>
+  <maintainer email="dkg@hiverobots.dk">Darshan Gowda</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>hive_interfaces</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

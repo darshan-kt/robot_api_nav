@@ -1,0 +1,36 @@
+"""
+Environment-driven config. This is the entire "deployment surface" of the
+gateway now — no ROS_DOMAIN_ID, no RMW_IMPLEMENTATION, no colcon build-base
+vars. Point MQTT_HOST at a different broker and the gateway runs anywhere.
+"""
+import os
+from pathlib import Path
+
+APP_PORT   = int(os.environ.get('APP_PORT', '1717'))
+
+MQTT_HOST     = os.environ.get('MQTT_HOST', 'localhost')
+MQTT_PORT     = int(os.environ.get('MQTT_PORT', '1883'))
+MQTT_USERNAME = os.environ.get('MQTT_USERNAME') or None
+MQTT_PASSWORD = os.environ.get('MQTT_PASSWORD') or None
+
+ROBOT_ID     = os.environ.get('ROBOT_ID', 'robot-1')
+TOPIC_PREFIX = f'hive/{ROBOT_ID}'
+
+# Operational map folder (map.pgm + map.yaml) — override with ROBOT_MAP_DIR
+ROBOT_MAP_DIR = os.environ.get('ROBOT_MAP_DIR', '/home/darshan/appstore/map')
+
+# Bundled .pgm map images shipped alongside this package (used by
+# /map_image). Used to be resolved via ament_index_python's
+# get_package_share_directory() — this is no longer a ROS/colcon package,
+# so it's just a path relative to this file.
+MAP_RESOURCE_DIR = Path(__file__).resolve().parent.parent / "resource"
+
+# How long /tasks waits for the bridge's task/ack before giving up and
+# returning 504 to the client (the bridge itself already applies a 3s
+# wait_for_server timeout per nav stack, so 8s covers Hive AND the Nav2
+# fallback path with margin).
+TASK_ACK_TIMEOUT_S = 8.0
+
+
+def topic(suffix: str) -> str:
+    return f'{TOPIC_PREFIX}/{suffix}'

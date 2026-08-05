@@ -1,3 +1,14 @@
+# hive_api_gateway is a plain Python service now (2026 MQTT refactor) — it
+# never runs colcon, so these can no longer be generated, but keep them
+# ignored in case an old branch/muscle-memory command recreates them.
+build_api/
+install_api/
+log_api/
+
+# Python bytecode caches
+__pycache__/
+*.pyc
+
 # Logs
 logs
 *.log

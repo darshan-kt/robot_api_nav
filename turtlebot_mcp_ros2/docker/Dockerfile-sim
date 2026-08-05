@@ -44,7 +44,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Defaults (all overridable via docker-compose environment) ────────────────
-ENV TURTLEBOT3_MODEL=burger \
+# burger_cam: burger footprint + an RGB-D camera (/depth_cam/image_raw) for
+# the Remote Controller's WebRTC feed. ros-humble-gazebo-ros-pkgs above
+# already provides libgazebo_ros_camera.so — no extra apt packages needed.
+ENV TURTLEBOT3_MODEL=burger_cam \
     RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
     ROS_DOMAIN_ID=0
 

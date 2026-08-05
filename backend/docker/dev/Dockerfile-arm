@@ -56,8 +56,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-nav2-msgs \
     ros-humble-nav2-bringup \
     ros-humble-twist-mux \
+    ros-humble-cv-bridge \
+    # hive_camera_bridge (WebRTC): cv-bridge converts sensor_msgs/Image to
+    # OpenCV frames; the libav*/opus/vpx/srtp2 dev headers are PyAV/aiortc's
+    # native build fallback in case a prebuilt aarch64 wheel isn't available
+    # for the exact Python version on this base image — pip prefers the
+    # wheel when one exists, these just stop that from being a hard failure.
+    ffmpeg libavdevice-dev libavfilter-dev libopus-dev libvpx-dev libsrtp2-dev \
     && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --no-cache-dir Pillow
+    && pip3 install --no-cache-dir Pillow paho-mqtt aiortc aiohttp
 
 # ============================================================================
 # Oh My Zsh Setup

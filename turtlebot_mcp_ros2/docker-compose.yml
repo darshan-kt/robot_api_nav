@@ -22,7 +22,12 @@ services:
     stdin_open: true
 
     environment:
-      - TURTLEBOT3_MODEL=burger
+      # burger_cam = burger's footprint/physics (SPAWN_* below stays valid)
+      # PLUS an RGB-D camera on /depth_cam/image_raw — needed for the
+      # Remote Controller's WebRTC camera feed (backend/hive_camera_bridge).
+      # Plain "burger" has no camera at all; waffle/waffle_pi would also
+      # work but change the robot's footprint for no benefit here.
+      - TURTLEBOT3_MODEL=burger_cam
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - ROS_DOMAIN_ID=0
       # Robot spawn pose — Gazebo spawn AND AMCL initial pose both use this,

@@ -1,12 +1,21 @@
 # Per-service `deploy.resources.limits` below are CPU/memory ceilings, sized
-# for a Raspberry Pi 5 (4 cores / 8 GB): 0.5+1.5+2.5 = 4.5 vCPU and
-# 256M+768M+3072M = 4G total, leaving headroom for the host OS, Docker
+# for a Raspberry Pi 5 (4 cores / 8 GB): 0.5+0.5+0.5+2.5 = 4.0 vCPU and
+# 256M+256M+512M+3072M = 4G total, leaving headroom for the host OS, Docker
 # daemon, and any other services (e.g. turtlebot_mcp_ros2's rplidar). A
 # per-container ceiling being individually generous while the sum exceeds 4
 # is intentional — Linux's CFS scheduler still caps real usage to what's
 # physically available, this just stops any ONE runaway container from
 # starving everything else and hanging the whole board. Compose v2 applies
 # these on plain `docker compose up`, no Swarm needed (Compose 2.35.1 here).
+#
+# NOTE on the MQTT split (2026 refactor): hive_api used to BE a ROS 2 node
+# (rclpy + colcon build, network_mode: host, ROS_DOMAIN_ID/RMW pinning) —
+# see git history if you need the old version. It's now a plain Python/
+# FastAPI service that only speaks MQTT; all ROS 2 code lives in
+# `robotstore` (hive_bt_server + bt_runner + the new hive_mqtt_bridge node).
+# That's why hive_api dropped from 1.5 vCPU/768M to 0.5/256M — it no longer
+# carries a ROS 2 workspace — freeing exactly the budget the new mqtt-broker
+# service needs (0.5/512M), so the total ceiling is unchanged from before.
 services:
 
   # ── React frontend — production build served by nginx ───────────────────────
@@ -33,54 +42,85 @@ services:
           cpus: "0.5"
           memory: 256M
 
-  # ── ROS 2 API gateway (backend/hive_api_gateway) ────────────────────────────
-  # Pre-build image + workspace first:  make build_hive_api
+  # ── MQTT broker — the decoupling point between hive_api and ROS 2 ───────────
+  # HiveMQ CE. Dev-mode auth: HIVEMQ_ALLOW_ALL_CLIENTS=true (anonymous, no
+  # username/password) — acceptable ONLY because this stack runs on a
+  # private robot/LAN network today. Before exposing the broker beyond that
+  # (cloud backend, multi-operator), add the HiveMQ file-RBAC extension (or
+  # switch to Mosquitto with a password_file) and TLS on 8883. Do not ship
+  # this default to anything internet-reachable.
+  mqtt-broker:
+    image: hivemq/hivemq-ce:latest
+    container_name: hive_mqtt_broker-arm
+    environment:
+      - HIVEMQ_ALLOW_ALL_CLIENTS=true
+      # Remote JMX is on by default in the image's run.sh and tries to bind
+      # an RMI connector using the container's own hostname — which doesn't
+      # always resolve cleanly depending on the Docker network/DNS setup
+      # (symptom: "MalformedURLException: Unable to resolve hostname" and
+      # the container crash-loops). We don't use remote JMX monitoring here,
+      # so just disable it instead of chasing container DNS.
+      - HIVEMQ_JMX_ENABLED=false
+    ports:
+      - "1883:1883"   # MQTT — published to the host so robotstore (host
+                       # network) reaches it at localhost:1883, same as
+                       # hive_api reaches it at mqtt-broker:1883 over the
+                       # compose network.
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  # ── FastAPI gateway (backend/hive_api_gateway) ───────────────────────────────
+  # Plain Python service — NO ROS 2, NO colcon. Talks to the robot only via
+  # MQTT (mqtt-broker) plus the local map.pgm file mount. Runs on the default
+  # compose bridge network (host networking is no longer needed — that
+  # requirement was purely a ROS 2 DDS discovery constraint).
   hive_api:
     image: hive_api:${ARCH_TAG:-amd64}
+    build:
+      context: ./backend/hive_api_gateway
+      dockerfile: Dockerfile
     # Suffixed -arm: avoids colliding with sibling checkouts (see appstore
     # note above).
     container_name: hive_api-api-arm
 
-    # Host network is mandatory for ROS 2 DDS multicast discovery.
-    # The gateway listens on host port 1717 — no 'ports:' mapping needed.
-    network_mode: host
+    ports:
+      - "1717:1717"
 
     tty: true
     stdin_open: true
 
     environment:
-      - ROS_DOMAIN_ID=0
-      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-      - BUILD_BASE=/home/ros2_ws/build_api
-      - INSTALL_BASE=/home/ros2_ws/install_api
-      - LOG_BASE=/home/ros2_ws/log_api
+      - MQTT_HOST=mqtt-broker
+      - MQTT_PORT=1883
+      - ROBOT_ID=robot-1
       - ROBOT_MAP_DIR=/robot_map   # map.pgm served by GET /api/map
 
     volumes:
-      # Package sources
-      - ./backend/hive_api_gateway:/home/ros2_ws/src/hive_api_gateway
-      - ./backend/hive_interfaces:/home/ros2_ws/src/hive_interfaces
-      # Entrypoint
-      - ./backend/docker/dev/entrypoint_api.sh:/home/ros2_ws/entrypoint_api.sh
-      # colcon build artifacts (persisted on host)
-      - ./build_api:/home/ros2_ws/build_api
-      - ./install_api:/home/ros2_ws/install_api
-      - ./log_api:/home/ros2_ws/log_api
+      # Source bind-mounted over the image's baked-in copy — Python changes
+      # hot-apply on `docker restart hive_api-api-arm`, no rebuild needed
+      # (same dev convenience the old ROS gateway had, just without colcon).
+      - ./backend/hive_api_gateway/app:/app/app
       # Operational map (read-only) — served by GET /api/map
       - ./map:/robot_map:ro
 
-    # 'just' mode: skip colcon build, source pre-built overlay, launch node
-    command: bash /home/ros2_ws/entrypoint_api.sh just
+    depends_on:
+      - mqtt-broker
 
     restart: unless-stopped
     deploy:
       resources:
         limits:
-          cpus: "1.5"
-          memory: 768M
+          cpus: "0.5"
+          memory: 256M
 
-  # ── RobotStore: hive_bt_server + bt_runner (backend/) ───────────────────────
+  # ── RobotStore: hive_bt_server + bt_runner + hive_mqtt_bridge (backend/) ────
   # Pre-build image + workspace first:  make build_robotstore
+  # The ONLY container where rclpy and MQTT both appear — hive_mqtt_bridge is
+  # the single ROS2↔MQTT translation point (see backend/hive_mqtt_bridge/).
   robotstore:
     image: robotstore_image:${ARCH_TAG:-amd64}
     # Suffixed -arm: avoids colliding with sibling checkouts (see appstore
@@ -101,12 +141,18 @@ services:
       - BUILD_BASE=/home/charlie/ros2_ws/build
       - INSTALL_BASE=/home/charlie/ros2_ws/install
       - LOG_BASE=/home/charlie/ros2_ws/log
+      # hive_mqtt_bridge → broker. Host networking means "localhost" reaches
+      # the mqtt-broker container via its host-published port (see above).
+      - MQTT_HOST=localhost
+      - MQTT_PORT=1883
+      - ROBOT_ID=robot-1
 
     volumes:
       # ROS 2 package sources
       - ./backend/bt_runner:/home/charlie/ros2_ws/src/bt_runner
       - ./backend/hive_bt_server:/home/charlie/ros2_ws/src/hive_bt_server
       - ./backend/hive_interfaces:/home/charlie/ros2_ws/src/hive_interfaces
+      - ./backend/hive_mqtt_bridge:/home/charlie/ros2_ws/src/hive_mqtt_bridge
       # CycloneDDS config
       - ./backend/cyclonedds.xml:/home/charlie/ros2_ws/cyclonedds.xml
       # Entrypoint + docker helpers
@@ -119,7 +165,11 @@ services:
 
     # Entrypoint sources the workspace and runs:
     #   ros2 launch bt_runner hive_server_runner.launch.py
+    # (which now also includes hive_mqtt_bridge — see that launch file)
     command: bash /home/charlie/ros2_ws/entrypoint_robotstore.sh
+
+    depends_on:
+      - mqtt-broker
 
     restart: unless-stopped
     deploy:

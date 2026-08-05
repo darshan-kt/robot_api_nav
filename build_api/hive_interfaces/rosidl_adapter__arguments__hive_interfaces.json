@@ -1,6 +1,0 @@
-{
-  "package_name": "hive_interfaces",
-  "non_idl_tuples": [
-    "/home/ros2_ws/src/hive_interfaces:action/ExecuteBehavior.action"
-  ]
-}

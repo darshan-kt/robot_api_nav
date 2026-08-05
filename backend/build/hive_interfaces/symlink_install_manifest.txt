@@ -66,6 +66,7 @@
 /home/charlie/ros2_ws/install/hive_interfaces/share/hive_interfaces/cmake/ament_cmake_export_targets-extras.cmake
 /home/charlie/ros2_ws/install/hive_interfaces/share/hive_interfaces/cmake/rosidl_cmake_export_typesupport_targets-extras.cmake
 /home/charlie/ros2_ws/install/hive_interfaces/share/hive_interfaces/cmake/rosidl_cmake_export_typesupport_libraries-extras.cmake
+/home/charlie/ros2_ws/install/hive_interfaces/share/hive_interfaces/cmake/rosidl_cmake_aggregate_target-extras.cmake
 /home/charlie/ros2_ws/install/hive_interfaces/share/hive_interfaces/cmake/hive_interfacesConfig.cmake
 /home/charlie/ros2_ws/install/hive_interfaces/share/hive_interfaces/cmake/hive_interfacesConfig-version.cmake
 /home/charlie/ros2_ws/install/hive_interfaces/share/hive_interfaces/package.xml

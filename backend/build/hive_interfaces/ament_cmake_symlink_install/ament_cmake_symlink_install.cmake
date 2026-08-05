@@ -432,6 +432,9 @@ ament_cmake_symlink_install_files("/home/charlie/ros2_ws/src/hive_interfaces" FI
 # install(FILES "/home/charlie/ros2_ws/build/hive_interfaces/rosidl_cmake/rosidl_cmake_export_typesupport_libraries-extras.cmake" "DESTINATION" "share/hive_interfaces/cmake")
 ament_cmake_symlink_install_files("/home/charlie/ros2_ws/src/hive_interfaces" FILES "/home/charlie/ros2_ws/build/hive_interfaces/rosidl_cmake/rosidl_cmake_export_typesupport_libraries-extras.cmake" "DESTINATION" "share/hive_interfaces/cmake")
 
+# install(FILES "/home/charlie/ros2_ws/build/hive_interfaces/rosidl_cmake/rosidl_cmake_aggregate_target-extras.cmake" "DESTINATION" "share/hive_interfaces/cmake")
+ament_cmake_symlink_install_files("/home/charlie/ros2_ws/src/hive_interfaces" FILES "/home/charlie/ros2_ws/build/hive_interfaces/rosidl_cmake/rosidl_cmake_aggregate_target-extras.cmake" "DESTINATION" "share/hive_interfaces/cmake")
+
 # install(FILES "/home/charlie/ros2_ws/build/hive_interfaces/ament_cmake_core/hive_interfacesConfig.cmake" "/home/charlie/ros2_ws/build/hive_interfaces/ament_cmake_core/hive_interfacesConfig-version.cmake" "DESTINATION" "share/hive_interfaces/cmake")
 ament_cmake_symlink_install_files("/home/charlie/ros2_ws/src/hive_interfaces" FILES "/home/charlie/ros2_ws/build/hive_interfaces/ament_cmake_core/hive_interfacesConfig.cmake" "/home/charlie/ros2_ws/build/hive_interfaces/ament_cmake_core/hive_interfacesConfig-version.cmake" "DESTINATION" "share/hive_interfaces/cmake")
 

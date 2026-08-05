@@ -1,0 +1,3 @@
+[console_scripts]
+bridge = hive_mqtt_bridge.bridge_node:main
+
