@@ -9,6 +9,12 @@ log_api/
 __pycache__/
 *.pyc
 
+# Real env files for the AWS/robot split (Makefile.aws) — hold real broker
+# credentials and domains. Templates (.env.aws.example, .env.robot.example)
+# stay tracked; the filled-in copies never do.
+.env.aws
+.env.robot
+
 # Logs
 logs
 *.log

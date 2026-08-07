@@ -557,6 +557,31 @@ continent — doesn't change that relationship. It only changes what address
 CycloneDDS, or `network_mode: host` changes on the robot side — those were
 never things the gateway participated in even on a single LAN.
 
+**Automation for this section lives in `Makefile.aws`** (a separate file
+from the main `Makefile` on purpose — the two sides of this split run on
+two different machines and shouldn't share a "just run everything" target).
+It reuses the same `docker-compose.yml` and the same `build_robotstore`
+recipe the main `Makefile` already has (`include Makefile` — no logic is
+duplicated), just aimed at a subset of services with a different env file
+per side:
+
+```bash
+# AWS side — on the EC2 instance
+cp .env.aws.example .env.aws        # fill in real values first
+make -f Makefile.aws aws_build
+make -f Makefile.aws aws_run
+
+# Robot side — on your laptop (with turtlebot_sim) today, real hardware later
+cp .env.robot.example .env.robot    # fill in the AWS broker's address
+make -f Makefile.aws build_robot
+make -f Makefile.aws run_robot
+```
+
+Both `.env.aws` and `.env.robot` are gitignored — only the `.example`
+templates are tracked. Neither target runs without its env file present
+(`aws_build`/`run_robot` fail with a clear message instead of silently
+running against defaults meant for local single-host dev).
+
 ```
                               Browser
                                  │  HTTPS / WSS
@@ -608,18 +633,21 @@ talked to it either.
 A `t3.medium`-class instance (2 vCPU/4GB) is plenty for `appstore` + `hive_api`
 + `mqtt-broker` — none of the ROS 2/colcon weight lives here anymore, that's
 the whole point of this repo's 2026 refactor. Install Docker + Compose v2,
-clone this repo, and run the same images this README already describes —
-just a different subset of services:
+clone this repo, and:
 
 ```bash
 # On the EC2 instance
 git clone <this repo> && cd appstore
-make build_hive_api           # same as local dev — no ROS toolchain needed
-make build_frontend
-ARCH_TAG=amd64 docker compose up -d appstore mqtt-broker hive_api
-# (deliberately NOT starting robotstore here — naming services explicitly
-# is enough, no compose file changes needed)
+cp .env.aws.example .env.aws   # fill in MQTT creds, CORS origin, ROBOT_ID
+make -f Makefile.aws aws_build
+make -f Makefile.aws aws_run
+make -f Makefile.aws aws_check   # curls /health once the broker's had a
+                                  # few seconds to finish booting (~8s, JVM)
 ```
+
+`aws_run` starts exactly `appstore` + `mqtt-broker` + `hive_api` — `robotstore`
+is never part of it; `aws_build` likewise only builds the two images that
+need building (`mqtt-broker` is a stock image, nothing to build).
 
 **Security group**: open 443 (or whatever port your ALB/reverse proxy
 terminates TLS on) to the internet for the frontend/gateway, and 8883 to the
@@ -671,23 +699,47 @@ side) and `robotstore` (robot side) once the broker actually enforces them.
 
 ### 4. Robot-side changes — this is the whole diff
 
-```yaml
-# robotstore service in docker-compose.yml, robot side only
-environment:
-  - MQTT_HOST=mqtt.yourdomain.com   # was localhost
-  - MQTT_PORT=8883                  # was 1883 — TLS now
-  - MQTT_USERNAME=robot-1
-  - MQTT_PASSWORD=${MQTT_PASSWORD}  # from a real secret, not committed
-  - ROBOT_ID=robot-1                # unchanged
-  # ROS_DOMAIN_ID, RMW_IMPLEMENTATION, CYCLONEDDS_URI, network_mode: host —
-  # all unchanged. The robot's own ROS 2 graph never left the robot.
+```bash
+# On whatever machine is playing "the robot" — see the note below on
+# turtlebot_sim
+cp .env.robot.example .env.robot
+# .env.robot:
+#   ROBOT_MQTT_HOST=mqtt.yourdomain.com   # was localhost
+#   ROBOT_MQTT_PORT=8883                  # was 1883 — TLS, once §2/§3 are done
+#   MQTT_USERNAME=...                     # matches .env.aws on the AWS side
+#   MQTT_PASSWORD=...                     # matches .env.aws on the AWS side
+#   ROBOT_ID=robot-1                      # matches .env.aws on the AWS side
+
+make -f Makefile.aws build_robot   # same colcon build as `make build_robotstore`
+make -f Makefile.aws run_robot     # starts ONLY robotstore — --no-deps, so
+                                    # this does NOT also spin up a local
+                                    # mqtt-broker, which docker-compose.yml's
+                                    # `depends_on` would otherwise do
 ```
+
+`run_robot` only changes `robotstore`'s `MQTT_HOST`/`MQTT_PORT`/
+`MQTT_USERNAME`/`MQTT_PASSWORD` (via `${ROBOT_MQTT_HOST:-localhost}`-style
+substitution already built into `docker-compose.yml`) — `ROS_DOMAIN_ID`,
+`RMW_IMPLEMENTATION`, `CYCLONEDDS_URI`, `network_mode: host` all stay exactly
+as they are for local single-host dev. The robot's own ROS 2 graph never
+left the robot.
 
 That's it for `hive_mqtt_bridge`. Telemetry, localisation, scan, health,
 `/tasks`, `/nav_goal`, `/cancel_nav`, `/set_pose`, and teleop all keep working
 exactly as documented above — they were already designed around "robot
 publishes/subscribes outbound to a broker," which is precisely what makes a
 broker on a different continent a non-event for all of them.
+
+**Testing with `turtlebot_sim` before switching to real hardware**:
+`run_robot` and `turtlebot_sim` are two independent things that happen to
+run on the same machine (your laptop, today) — keep starting the sim exactly
+as documented in `turtlebot_mcp_ros2` (`make run_sim` / `run_sim_headless`
+from that directory), unrelated to `Makefile.aws`. `robotstore` and the sim
+still find each other over local ROS 2 DDS on that machine, same as the
+single-host setup this whole README otherwise describes — the only thing
+that changed is which broker `hive_mqtt_bridge` reaches out to. When you
+eventually swap the sim for the real robot, `run_robot` doesn't change at
+all; only where you run it does.
 
 ### 5. The one thing that doesn't carry over cleanly: the camera feed
 
@@ -733,18 +785,19 @@ fine; closed-loop human control doesn't.
 2. Decide broker auth now (Mosquitto+password_file or HiveMQ file-RBAC) —
    don't deploy with `HIVEMQ_ALLOW_ALL_CLIENTS=true` reachable publicly, even
    temporarily.
-3. `make build_hive_api && make build_frontend` on the instance.
-4. `docker compose up -d appstore mqtt-broker hive_api` (robotstore stays off).
-5. ALB/nginx + ACM cert in front of `appstore`/`hive_api`; TLS listener on
+3. On the EC2 instance: `cp .env.aws.example .env.aws`, fill in real
+   `MQTT_USERNAME`/`MQTT_PASSWORD`/`CORS_ALLOWED_ORIGINS`/`ROBOT_ID`, then
+   `make -f Makefile.aws aws_build && make -f Makefile.aws aws_run`.
+4. ALB/nginx + ACM cert in front of `appstore`/`hive_api`; TLS listener on
    the broker's 8883; Route53 records for both.
-6. On the robot: update `robotstore`'s `MQTT_HOST`/`MQTT_PORT`/
-   `MQTT_USERNAME`/`MQTT_PASSWORD`, leave everything else in its
-   `docker-compose.yml` untouched.
-7. Set `CORS_ALLOWED_ORIGINS` on `hive_api` to the real frontend origin(s) —
-   defaults to `*`, which is fine for local LAN dev and wrong here.
-8. Confirm `GET /health` on the public gateway URL shows `mqtt_connected:
-   true`, then `robot_alive: true` once the robot-side bridge reconnects.
-9. Decide on the camera feed (§5 above) before assuming Remote Controller's
+5. On the robot side (your laptop with `turtlebot_sim` today, real hardware
+   later): `cp .env.robot.example .env.robot`, fill in the AWS broker's
+   address + the SAME credentials/`ROBOT_ID` as `.env.aws`, then
+   `make -f Makefile.aws build_robot && make -f Makefile.aws run_robot`.
+6. `make -f Makefile.aws aws_check` — confirm `mqtt_connected: true`, then
+   `robot_alive: true` once the robot-side bridge reconnects and (if
+   testing with the sim) `turtlebot_sim` is actually up.
+7. Decide on the camera feed (§5 above) before assuming Remote Controller's
    camera toggle will work — everything else will.
 
 ---
