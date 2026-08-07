@@ -541,6 +541,214 @@ Robot spawn pose is set in the sim `docker-compose.yml` (`SPAWN_X`, `SPAWN_Y`,
 
 ---
 
+## ☁️ Deploying to AWS
+
+**Split:** `appstore` (frontend) + `hive_api` (gateway) + `mqtt-broker` run on
+one EC2 instance. `robotstore` — `hive_mqtt_bridge`, `hive_bt_server`,
+`bt_runner`, `hive_camera_bridge` — stays exactly where it is today: on the
+robot's own machine, on the robot's own network, talking Nav2/AMCL/DDS
+locally exactly as before.
+
+This split is *why* the MQTT refactor happened in the first place: the
+gateway and the robot never talk to each other directly, only through the
+broker. Moving the gateway to a different machine — even a different
+continent — doesn't change that relationship. It only changes what address
+`MQTT_HOST` points to. Nothing about `ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION`,
+CycloneDDS, or `network_mode: host` changes on the robot side — those were
+never things the gateway participated in even on a single LAN.
+
+```
+                              Browser
+                                 │  HTTPS / WSS
+                                 ▼
+              ┌──────────────────────────────────────┐
+              │  AWS EC2 instance                      │
+              │  ┌────────────┐   ┌──────────────┐     │
+              │  │  appstore   │   │  hive_api     │     │
+              │  │  :5174      │   │  :1717        │     │
+              │  └────────────┘   └──────┬────────┘     │
+              │                          │ MQTT           │
+              │                   ┌──────▼────────┐      │
+              │                   │  mqtt-broker   │      │
+              │                   │  :8883 (TLS)   │      │
+              │                   └──────┬────────┘      │
+              └──────────────────────────┼───────────────┘
+                                          │ outbound MQTT/TLS —
+                                          │ ROBOT dials OUT, so no
+                                          │ inbound port ever needs
+                                          │ to open on its network
+                                          ▼
+                        ┌───────────────────────────────────┐
+                        │  Robot — its own network             │
+                        │  (host networking, DDS — unchanged)  │
+                        │  robotstore: hive_mqtt_bridge,        │
+                        │  hive_bt_server, bt_runner,           │
+                        │  hive_camera_bridge                   │
+                        │       ↓                                │
+                        │  Nav2 → real hardware / TurtleBot3     │
+                        └───────────────────────────────────┘
+```
+
+### What moves, what doesn't
+
+| Stays on the robot, unchanged | Moves to EC2 |
+|---|---|
+| `robotstore` (all of it) | `appstore` |
+| Nav2, AMCL, costmaps, the physical robot / TurtleBot3 | `hive_api` |
+| `ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION`, CycloneDDS, `network_mode: host` | `mqtt-broker` |
+
+The only edit on the robot side is `robotstore`'s `MQTT_HOST`/`MQTT_PORT`
+(and now `MQTT_USERNAME`/`MQTT_PASSWORD`, see below) in `docker-compose.yml`,
+pointed at the EC2 instance instead of `localhost`. `hive_bt_server`,
+`bt_runner`, and Nav2 don't know or care that the gateway moved — they never
+talked to it either.
+
+### 1. EC2 instance
+
+A `t3.medium`-class instance (2 vCPU/4GB) is plenty for `appstore` + `hive_api`
++ `mqtt-broker` — none of the ROS 2/colcon weight lives here anymore, that's
+the whole point of this repo's 2026 refactor. Install Docker + Compose v2,
+clone this repo, and run the same images this README already describes —
+just a different subset of services:
+
+```bash
+# On the EC2 instance
+git clone <this repo> && cd appstore
+make build_hive_api           # same as local dev — no ROS toolchain needed
+make build_frontend
+ARCH_TAG=amd64 docker compose up -d appstore mqtt-broker hive_api
+# (deliberately NOT starting robotstore here — naming services explicitly
+# is enough, no compose file changes needed)
+```
+
+**Security group**: open 443 (or whatever port your ALB/reverse proxy
+terminates TLS on) to the internet for the frontend/gateway, and 8883 to the
+internet for the broker — the robot needs a direct route to the broker's
+MQTT port; that traffic doesn't go through an HTTP load balancer. Nothing
+else needs to be open.
+
+### 2. TLS + DNS
+
+Two different kinds of traffic need TLS, terminated in two different places:
+
+- **HTTPS/WSS for the browser** — put an ALB (or nginx/Caddy) in front of
+  `appstore`:5174 and `hive_api`:1717 with an ACM cert. This part is standard
+  web-app TLS, nothing MQTT-specific about it. **This is not optional** —
+  `GATEWAY_URL` becomes `https://…`, and a browser serving `appstore` over
+  HTTPS will refuse to open a plain `ws://` connection to the gateway at all
+  (mixed content); it has to be `wss://`.
+- **TLS for the robot's MQTT connection** — HiveMQ's default listener on
+  1883 is plaintext. Add a TLS listener on 8883 (HiveMQ CE supports this via
+  its config; mount a cert the same way the broker's other config gets
+  mounted) and point `robotstore`'s `MQTT_PORT=8883` at it. An ALB can't
+  proxy this (it's not HTTP) — either expose 8883 directly on the EC2
+  instance's security group, or put an NLB in front of it if you want a
+  stable DNS name independent of the instance's own IP.
+
+Route53 (or any DNS provider) gives both endpoints stable hostnames instead
+of raw IPs — worth doing before the robot's config points at anything, since
+EC2 public IPs change on instance restart unless you've attached an Elastic IP.
+
+### 3. Broker authentication — no longer optional
+
+`HIVEMQ_ALLOW_ALL_CLIENTS=true` (this repo's dev-mode default, see Gotcha #3)
+is fine on a private LAN and **actively wrong** the moment 8883 is reachable
+from the public internet — `cmd/velocity`, `cmd/goal`, and `cmd/cancel_nav`
+all originate from whoever can publish to the broker. Both the gateway and
+the bridge already support authenticated MQTT out of the box —
+`MQTT_USERNAME`/`MQTT_PASSWORD` env vars exist on both sides today, this was
+built in from the start, not something new to add. What's missing is the
+broker's own auth backend:
+
+- **Simplest**: swap `mqtt-broker`'s image for `eclipse-mosquitto` with a
+  `password_file` — a few lines of Mosquitto config, no extension to install.
+- **Staying on HiveMQ CE**: add the [HiveMQ file-RBAC
+  extension](https://github.com/hivemq/hivemq-file-rbac-extension) and drop
+  `HIVEMQ_ALLOW_ALL_CLIENTS` entirely.
+
+Either way, set the same `MQTT_USERNAME`/`MQTT_PASSWORD` on `hive_api` (EC2
+side) and `robotstore` (robot side) once the broker actually enforces them.
+
+### 4. Robot-side changes — this is the whole diff
+
+```yaml
+# robotstore service in docker-compose.yml, robot side only
+environment:
+  - MQTT_HOST=mqtt.yourdomain.com   # was localhost
+  - MQTT_PORT=8883                  # was 1883 — TLS now
+  - MQTT_USERNAME=robot-1
+  - MQTT_PASSWORD=${MQTT_PASSWORD}  # from a real secret, not committed
+  - ROBOT_ID=robot-1                # unchanged
+  # ROS_DOMAIN_ID, RMW_IMPLEMENTATION, CYCLONEDDS_URI, network_mode: host —
+  # all unchanged. The robot's own ROS 2 graph never left the robot.
+```
+
+That's it for `hive_mqtt_bridge`. Telemetry, localisation, scan, health,
+`/tasks`, `/nav_goal`, `/cancel_nav`, `/set_pose`, and teleop all keep working
+exactly as documented above — they were already designed around "robot
+publishes/subscribes outbound to a broker," which is precisely what makes a
+broker on a different continent a non-event for all of them.
+
+### 5. The one thing that doesn't carry over cleanly: the camera feed
+
+`POST /webrtc/offer` today has `hive_api` make an **outbound HTTP call to
+the robot** (`CAMERA_BRIDGE_URL`) to reach `hive_camera_bridge`'s signaling
+endpoint. That direction is backwards for a robot behind NAT with no port
+forwarding — which is exactly the situation this whole migration is
+otherwise designed to avoid needing. Two ways to handle it:
+
+- **Quick fix, if you control the robot's network**: port-forward
+  `hive_camera_bridge`'s signaling port (8766) on the robot's router, or put
+  the robot on a VPN that gives the EC2 instance a route to it. Works today,
+  zero code changes.
+- **Proper fix** (not built yet): invert signaling so the robot dials out to
+  a relay the same way `hive_mqtt_bridge` already does for MQTT, and add a
+  TURN relay (e.g. `coturn`) for the actual video — WebRTC media needs a
+  relay the moment browser and robot aren't on a network that can reach each
+  other directly, the same way `/nav_goal`'s MQTT command never needed one.
+  This is real design/build work, not a config change — happy to build it if
+  the camera feed needs to work over this split.
+
+Everything else in this README (MQTT topic tree, the three navigation
+dispatch paths, `/nav_goal`/`/cancel_nav`/`/set_pose`) is unaffected by this
+gap — it's specific to WebRTC's signaling direction, not the MQTT-backed
+paths.
+
+### 6. Latency — re-examine, don't just assume it's fine
+
+The teleop dual deadman (400ms browser↔gateway, 500ms gateway↔bridge — see
+[Safety notes](#-safety-notes)) was tuned for same-LAN latency. Once
+`cmd/velocity` crosses the public internet, round-trip time depends on the
+robot's own uplink (WiFi backhaul vs. LTE vs. Starlink), and could land
+anywhere from 30ms to 300ms+ with jitter. Before trusting manual teleop over
+this path: surface round-trip latency to the operator (a number on Remote
+Controller, not just a connected/disconnected pill), and seriously consider
+whether teleop should be a LAN-only capability even after this split, with
+AWS handling mission dispatch and telemetry only — those tolerate latency
+fine; closed-loop human control doesn't.
+
+### Migration checklist
+
+1. Launch the EC2 instance, install Docker + Compose v2.
+2. Decide broker auth now (Mosquitto+password_file or HiveMQ file-RBAC) —
+   don't deploy with `HIVEMQ_ALLOW_ALL_CLIENTS=true` reachable publicly, even
+   temporarily.
+3. `make build_hive_api && make build_frontend` on the instance.
+4. `docker compose up -d appstore mqtt-broker hive_api` (robotstore stays off).
+5. ALB/nginx + ACM cert in front of `appstore`/`hive_api`; TLS listener on
+   the broker's 8883; Route53 records for both.
+6. On the robot: update `robotstore`'s `MQTT_HOST`/`MQTT_PORT`/
+   `MQTT_USERNAME`/`MQTT_PASSWORD`, leave everything else in its
+   `docker-compose.yml` untouched.
+7. Set `CORS_ALLOWED_ORIGINS` on `hive_api` to the real frontend origin(s) —
+   defaults to `*`, which is fine for local LAN dev and wrong here.
+8. Confirm `GET /health` on the public gateway URL shows `mqtt_connected:
+   true`, then `robot_alive: true` once the robot-side bridge reconnects.
+9. Decide on the camera feed (§5 above) before assuming Remote Controller's
+   camera toggle will work — everything else will.
+
+---
+
 ## 🧑‍💻 Frontend Development
 
 ```bash

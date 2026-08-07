@@ -8,6 +8,15 @@ from pathlib import Path
 
 APP_PORT   = int(os.environ.get('APP_PORT', '1717'))
 
+# Comma-separated allowed origins for the browser-facing API, e.g.
+# "https://appstore.example.com,https://ops.example.com". Defaults to "*"
+# (any origin) — fine on a private LAN where the only thing that can reach
+# this port is already trusted, wrong the moment this is reachable from the
+# public internet (see README's AWS deployment section).
+CORS_ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', '*').split(',') if o.strip()
+] or ['*']
+
 MQTT_HOST     = os.environ.get('MQTT_HOST', 'localhost')
 MQTT_PORT     = int(os.environ.get('MQTT_PORT', '1883'))
 MQTT_USERNAME = os.environ.get('MQTT_USERNAME') or None
