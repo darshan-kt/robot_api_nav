@@ -39,6 +39,14 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+      args:
+        # Baked into the static JS bundle at build time (Vite, not a runtime
+        # env var — see docker/Dockerfile comment). Set VITE_GATEWAY_URL in
+        # whichever env-file you build with (.env.aws for the AWS side) to
+        # the address browsers will actually load the gateway API from —
+        # e.g. http://<ec2-public-ip>:1717. Defaults to localhost, which is
+        # only correct when the browser and hive_api run on the same host.
+        VITE_GATEWAY_URL: ${VITE_GATEWAY_URL:-http://localhost:1717}
     # Suffixed -arm: this repo (appstore_arm) is commonly checked out
     # alongside sibling copies (e.g. appstore_amd) that use the same
     # docker-compose.yml — plain "robot_appstore" collides with theirs
@@ -122,18 +130,11 @@ services:
       # moment hive_api is reachable from the public internet. Set to the
       # real frontend origin(s) when deploying (see README's AWS section).
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-*}
-      # hive_camera_bridge's WebRTC signaling endpoint. host.docker.internal
-      # (below) resolves to the Pi5's own IP from inside this container —
-      # robotstore is host-networked, so port 8766 bound there is really
-      # bound on the host, same as mqtt-broker's published 1883.
-      - CAMERA_BRIDGE_URL=http://host.docker.internal:8766
-
-    # Lets a container on the default bridge network reach services bound
-    # directly on the host (robotstore's host-networked port 8766) without
-    # putting hive_api back on host networking itself. Standard Docker
-    # Compose feature since 20.10, Linux and Docker Desktop both support it.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      # WebRTC signaling (POST /webrtc/offer) rides the MQTT connection
+      # above now — cmd/webrtc_offer -> webrtc/answer, same path as every
+      # other robot-bound command (see mqtt_client.publish_webrtc_offer).
+      # No direct HTTP address to hive_camera_bridge is needed here
+      # anymore; that's what let this stop needing host.docker.internal.
 
     volumes:
       # Source bind-mounted over the image's baked-in copy — Python changes

@@ -24,7 +24,6 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import httpx
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,21 +36,16 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(name)s] %(message
 logger = logging.getLogger('gateway')
 
 mqtt_client = GatewayMqttClient()
-http_client: httpx.AsyncClient | None = None   # set in lifespan — see /webrtc/offer
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global http_client
     logger.info(
         f"[gateway] starting — MQTT target {config.MQTT_HOST}:{config.MQTT_PORT}, "
-        f"robot_id={config.ROBOT_ID}, map_dir={config.ROBOT_MAP_DIR}, "
-        f"camera_bridge={config.CAMERA_BRIDGE_URL}"
+        f"robot_id={config.ROBOT_ID}, map_dir={config.ROBOT_MAP_DIR}"
     )
     mqtt_client.start()
-    http_client = httpx.AsyncClient(timeout=config.CAMERA_OFFER_TIMEOUT_S)
     yield
-    await http_client.aclose()
     await mqtt_client.stop()
 
 
@@ -499,19 +493,22 @@ async def scan_ws(ws: WebSocket):
 
 
 # =============================================================================
-# WebRTC signaling proxy — the one endpoint that talks HTTP straight to a
-# robot-side node instead of going through MQTT. See hive_camera_bridge's
-# module docstring for why: signaling is a one-time, small SDP exchange that
-# can ride any transport, but the video itself (RTP, continuous) needs a
-# direct path and flows browser <-> hive_camera_bridge directly once this
-# call completes — it never touches this process.
+# WebRTC signaling — relayed over MQTT (cmd/webrtc_offer -> webrtc/answer),
+# same path as every other robot-bound command. See
+# mqtt_client.publish_webrtc_offer's docstring for why this used to be a
+# direct HTTP call to hive_camera_bridge and no longer is: that only worked
+# when the gateway and the robot shared a host/LAN, which stopped being true
+# once the gateway could run on AWS while the robot stays on its own network
+# (see README's AWS section). Only the one-time SDP exchange rides MQTT —
+# once this call returns, the actual video (RTP, continuous) flows directly
+# between the browser and hive_camera_bridge; it never touches this process.
 # =============================================================================
 
 @api_app.post("/webrtc/offer")
 async def webrtc_offer(payload: dict):
     """
-    Proxy a browser's WebRTC SDP offer to hive_camera_bridge and relay back
-    its answer unchanged.
+    Relay a browser's WebRTC SDP offer to hive_camera_bridge (via the robot's
+    MQTT bridge) and return its answer unchanged.
 
     Request/response body: {"sdp": "...", "type": "offer"|"answer"}
 
@@ -519,19 +516,23 @@ async def webrtc_offer(payload: dict):
       -H 'Content-Type: application/json' \\
       -d '{"sdp": "v=0...", "type": "offer"}'
     """
-    if http_client is None:
-        raise HTTPException(status_code=503, detail="Gateway not ready")
+    sdp  = payload.get("sdp")
+    type_ = payload.get("type", "offer")
+    if not sdp:
+        raise HTTPException(422, "Provide 'sdp'")
 
     try:
-        resp = await http_client.post(f"{config.CAMERA_BRIDGE_URL}/offer", json=payload)
-        resp.raise_for_status()
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Camera bridge did not answer in time")
-    except httpx.HTTPError as exc:
-        logger.warning(f"[/webrtc/offer] camera bridge unreachable: {exc}")
-        raise HTTPException(status_code=503, detail="Camera bridge unreachable — is robotstore running?")
+        answer = await mqtt_client.publish_webrtc_offer(sdp, type_)
+    except MqttUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except AckTimeout as exc:
+        raise HTTPException(status_code=504, detail=str(exc))
+    except ValueError as exc:
+        # Bridge reached fine, but hive_camera_bridge itself didn't answer
+        # (not running, crashed, wrong CAMERA_TOPIC, etc).
+        raise HTTPException(status_code=503, detail=str(exc))
 
-    return resp.json()
+    return answer
 
 
 @api_app.get("/health")

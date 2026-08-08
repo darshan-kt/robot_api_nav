@@ -48,10 +48,10 @@ GOAL_ACK_TIMEOUT_S = 6.0
 # instant; short timeout mostly guards against a wedged MQTT link.
 CANCEL_ACK_TIMEOUT_S = 5.0
 
-# hive_camera_bridge's WebRTC signaling endpoint (backend/hive_camera_bridge).
-# /webrtc/offer proxies the browser's SDP offer here — see that module's
-# docstring for why signaling is proxied but the video itself isn't.
-CAMERA_BRIDGE_URL     = os.environ.get('CAMERA_BRIDGE_URL', 'http://localhost:8766')
+# /webrtc/offer relays the browser's SDP offer to hive_camera_bridge over
+# MQTT (cmd/webrtc_offer -> webrtc/answer), same as every other robot-bound
+# command — see mqtt_client.publish_webrtc_offer's docstring. This is how
+# long to wait for the bridge's answer before giving up.
 CAMERA_OFFER_TIMEOUT_S = 6.0
 
 

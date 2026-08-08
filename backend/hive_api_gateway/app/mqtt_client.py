@@ -47,12 +47,14 @@ class GatewayMqttClient:
         self.latest_scan:         dict | None = None
         self.latest_health:       dict | None = None
 
-        # id -> Future, resolved when the matching ack arrives. Three
-        # separate maps (rather than one shared one) so a task_id, goal_id,
-        # and cancel request_id can never collide even in principle.
+        # id -> Future, resolved when the matching ack arrives. Separate maps
+        # (rather than one shared one) so a task_id, goal_id, cancel
+        # request_id, and webrtc offer_id can never collide even in
+        # principle.
         self._pending_task_acks:   dict[str, asyncio.Future] = {}
         self._pending_goal_acks:   dict[str, asyncio.Future] = {}
         self._pending_cancel_acks: dict[str, asyncio.Future] = {}
+        self._pending_webrtc_acks: dict[str, asyncio.Future] = {}
 
     # =========================================================================
     # Lifecycle
@@ -145,6 +147,8 @@ class GatewayMqttClient:
             logger.info(f'[mqtt] goal/result: {data}')
         elif suffix == 'cancel_nav/ack':
             self._resolve(self._pending_cancel_acks, data.get('request_id'), data)
+        elif suffix == 'webrtc/answer':
+            self._resolve(self._pending_webrtc_acks, data.get('offer_id'), data)
 
     @staticmethod
     def _resolve(pending: dict, key, data: dict):
@@ -241,3 +245,33 @@ class GatewayMqttClient:
             json.dumps(payload),
             qos=1,
         )
+
+    async def publish_webrtc_offer(self, sdp: str, type_: str,
+                                    timeout: float = config.CAMERA_OFFER_TIMEOUT_S) -> dict:
+        """
+        Relays a browser's WebRTC SDP offer to the robot over MQTT (topic
+        cmd/webrtc_offer) and waits for the bridge's webrtc/answer — same
+        publish-then-wait-for-ack shape as publish_goal/publish_cancel_nav.
+
+        Replaces a direct HTTP call this process used to make straight to
+        hive_camera_bridge's signaling port: that only worked when both
+        processes shared a host/LAN. Once the gateway and the robot are on
+        separate networks (see README's AWS section), MQTT is the only link
+        between them — this rides that same link, matching every other
+        command here. Only the one-time SDP text exchange goes through this
+        path; the actual video stream (RTP) never does, it flows directly
+        between the browser and hive_camera_bridge once negotiation
+        finishes.
+
+        Returns {"sdp": ..., "type": ...} on success. The bridge reports
+        camera-bridge-unreachable-on-the-robot-side as {"error": "..."} in
+        the SAME ack (not an AckTimeout) — see the ValueError raise below.
+        """
+        offer_id = str(uuid.uuid4())
+        payload = {'offer_id': offer_id, 'sdp': sdp, 'type': type_}
+        ack = await self._publish_and_wait(
+            self._pending_webrtc_acks, offer_id, 'cmd/webrtc_offer', payload, timeout
+        )
+        if 'error' in ack:
+            raise ValueError(ack['error'])
+        return ack

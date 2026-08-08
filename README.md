@@ -150,11 +150,13 @@ requirement, and neither of them speaks DDS anymore.
 | `goal/ack` | bridge → gateway | 1 | no | reply to `cmd/goal`: `{goal_id, accepted, waypoint_count, detail?}` |
 | `goal/result` | bridge → gateway | 1 | no | `{goal_id, status}` — `action_msgs/GoalStatus` code, logged not surfaced synchronously |
 | `cancel_nav/ack` | bridge → gateway | 1 | no | reply to `cmd/cancel_nav`: `{request_id, cancelled}` |
+| `webrtc/answer` | bridge → gateway | 1 | no | reply to `cmd/webrtc_offer`: `{offer_id, sdp, type}` or `{offer_id, error}` |
 | `cmd/task` | gateway → bridge | 1 | no | mission dispatch (was `POST /tasks`) |
 | `cmd/velocity` | gateway → bridge | 0 | no | teleop `{linear, angular}` (was `/api/velocity_ctrl`) |
 | `cmd/goal` | gateway → bridge | 1 | no | direct Nav2 route, `{goal_id, poses[]}` (was `POST /nav_goal`) |
 | `cmd/cancel_nav` | gateway → bridge | 1 | no | `{request_id}` — cancel the active NavigateThroughPoses goal (was `POST /cancel_nav`) |
 | `cmd/set_pose` | gateway → bridge | 1 | no | `{pose, covariance?}`, fire-and-forget — set AMCL's initial pose (was `POST /set_pose`) |
+| `cmd/webrtc_offer` | gateway → bridge | 1 | no | `{offer_id, sdp, type}` — relayed to `hive_camera_bridge` over local HTTP, answer published back on `webrtc/answer` (was a direct HTTP call from `hive_api`, see §5 of the AWS section) |
 
 `health` carries an MQTT **Last Will and Testament**: if `hive_mqtt_bridge` dies
 or its connection drops uncleanly, the broker publishes `robot_alive:false` on
@@ -475,13 +477,15 @@ Robot spawn pose is set in the sim `docker-compose.yml` (`SPAWN_X`, `SPAWN_Y`,
     `ros2 action send_goal` / `ros2 topic echo --once` on the ROS 2 side and
     watch `mosquitto_sub` update on the MQTT side to confirm the whole chain.
 11. **`POST /webrtc/offer` returns 503 with no camera picture, not a hang.**
-    That means `hive_api` couldn't reach `hive_camera_bridge` at
-    `CAMERA_BRIDGE_URL` (default `http://host.docker.internal:8766`) — check
-    `robotstore` is actually up and that `extra_hosts:
-    host.docker.internal:host-gateway` is still in `hive_api`'s compose
-    service (it's what lets a bridge-network container reach a
-    host-networked sibling's port without putting `hive_api` back on host
-    networking).
+    Signaling rides MQTT now (`cmd/webrtc_offer` → `webrtc/answer`, relayed by
+    `hive_mqtt_bridge` to `hive_camera_bridge` over local HTTP — see
+    `mqtt_client.publish_webrtc_offer`'s docstring), so a 503 here means
+    either the MQTT link itself is down (check `mqtt_connected` on
+    `/health` first) or `hive_camera_bridge` isn't actually up on the robot
+    (check `robotstore`'s logs for `hive_camera_bridge subscribed to
+    ...`). No `host.docker.internal`/`extra_hosts` plumbing to worry about
+    anymore — that direct-HTTP path is gone precisely because it broke once
+    the gateway and the robot could be on different networks.
 12. **No camera feed even though everything's "connected."** `TURTLEBOT3_MODEL`
     in `turtlebot_mcp_ros2/docker-compose.yml` has to be `burger_cam` (or
     `waffle`/`waffle_pi`), not plain `burger` — plain burger has no camera at
@@ -741,30 +745,37 @@ that changed is which broker `hive_mqtt_bridge` reaches out to. When you
 eventually swap the sim for the real robot, `run_robot` doesn't change at
 all; only where you run it does.
 
-### 5. The one thing that doesn't carry over cleanly: the camera feed
+### 5. The camera feed: signaling is fixed, the video path is the one caveat left
 
-`POST /webrtc/offer` today has `hive_api` make an **outbound HTTP call to
+`POST /webrtc/offer` used to have `hive_api` make an **outbound HTTP call to
 the robot** (`CAMERA_BRIDGE_URL`) to reach `hive_camera_bridge`'s signaling
-endpoint. That direction is backwards for a robot behind NAT with no port
-forwarding — which is exactly the situation this whole migration is
-otherwise designed to avoid needing. Two ways to handle it:
+endpoint — backwards for a robot behind NAT with no port forwarding, exactly
+the situation this whole migration is otherwise designed to avoid needing.
+That's fixed: signaling now rides the same MQTT link as everything else
+(`cmd/webrtc_offer` → `webrtc/answer`, relayed by `hive_mqtt_bridge` to
+`hive_camera_bridge` over local HTTP — see `mqtt_client.publish_webrtc_offer`
+and `bridge_node._handle_cmd_webrtc_offer`). No port forwarding, no VPN, no
+`CAMERA_BRIDGE_URL`/`host.docker.internal` config — the robot dials out to
+the broker for this exchange exactly like it does for `/nav_goal`.
 
-- **Quick fix, if you control the robot's network**: port-forward
-  `hive_camera_bridge`'s signaling port (8766) on the robot's router, or put
-  the robot on a VPN that gives the EC2 instance a route to it. Works today,
-  zero code changes.
-- **Proper fix** (not built yet): invert signaling so the robot dials out to
-  a relay the same way `hive_mqtt_bridge` already does for MQTT, and add a
-  TURN relay (e.g. `coturn`) for the actual video — WebRTC media needs a
-  relay the moment browser and robot aren't on a network that can reach each
-  other directly, the same way `/nav_goal`'s MQTT command never needed one.
-  This is real design/build work, not a config change — happy to build it if
-  the camera feed needs to work over this split.
+What this does **not** fix, because WebRTC itself is built this way: once
+signaling completes, the actual video (RTP, continuous) still flows
+**directly** between the browser and `hive_camera_bridge` — it never touches
+the gateway or MQTT, those aren't built for bulk real-time media. That
+direct path is negotiated via ICE using public STUN servers, which is often
+enough on its own when only one side (the robot) is behind NAT — many home
+routers support the UDP hole-punching this needs. It is not guaranteed
+(symmetric NATs, restrictive corporate networks, etc.), so if the picture
+still doesn't come through after signaling clearly succeeds (check
+`hive_api` logs for `[/webrtc/offer]` — no more "camera bridge unreachable"
+errors expected), the fix is a TURN relay (e.g. `coturn`) for the media
+path specifically. That's a separate, still-open piece of work — ask if the
+feed needs it.
 
 Everything else in this README (MQTT topic tree, the three navigation
-dispatch paths, `/nav_goal`/`/cancel_nav`/`/set_pose`) is unaffected by this
-gap — it's specific to WebRTC's signaling direction, not the MQTT-backed
-paths.
+dispatch paths, `/nav_goal`/`/cancel_nav`/`/set_pose`) was already
+unaffected by any of this — it's specific to WebRTC's two-phase
+signaling/media design, not the MQTT-backed paths.
 
 ### 6. Latency — re-examine, don't just assume it's fine
 

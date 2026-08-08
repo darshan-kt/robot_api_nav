@@ -21,8 +21,28 @@ Topic tree (prefix "hive/<ROBOT_ID>/", ROBOT_ID from env, default "robot-1"):
     task/result   {task_id, success, outcome_text}              QoS1
 
   Commands (gateway -> broker -> bridge):
-    cmd/task      mission dispatch (was POST /tasks)            QoS1
-    cmd/velocity  teleop {linear, angular} (was /api/velocity_ctrl) QoS0
+    cmd/task         mission dispatch (was POST /tasks)               QoS1
+    cmd/velocity     teleop {linear, angular} (was /api/velocity_ctrl) QoS0
+    cmd/goal         direct Nav2 dispatch (was POST /nav_goal)         QoS1
+    cmd/cancel_nav   cancel active nav goal (was POST /cancel_nav)     QoS1
+    cmd/set_pose     set AMCL initial pose (was POST /set_pose)        QoS1
+    cmd/webrtc_offer relay a browser's SDP offer to the local camera
+                     bridge over plain HTTP (localhost, same container/
+                     host — see _handle_cmd_webrtc_offer) and publish
+                     its answer back on webrtc/answer. Exists because
+                     the gateway (backend/hive_api_gateway) may now be
+                     on a completely different network than the robot
+                     (see README's AWS section) — it can no longer
+                     reach hive_camera_bridge's signaling port directly
+                     the way it could when everything shared one host.
+                     MQTT already crosses that gap reliably (the robot
+                     dials OUT to the broker, same as every other
+                     topic here), so signaling rides it too. The actual
+                     video (RTP) still flows directly between the
+                     browser and hive_camera_bridge once this
+                     handshake completes — MQTT only ever carries the
+                     one-time SDP text exchange, never the media.
+    webrtc/answer    {offer_id, sdp, type} or {offer_id, error}     QoS1 (reply to cmd/webrtc_offer)
 
 Poses inside cmd/task are already map-frame (metres + quaternion) — pixel<->map
 conversion is pure math with no ROS dependency and stays in the gateway
@@ -34,6 +54,8 @@ import math
 import os
 import threading
 import time
+import urllib.error
+import urllib.request
 import uuid
 
 import rclpy
@@ -59,6 +81,12 @@ MQTT_PORT    = int(os.environ.get('MQTT_PORT', '1883'))
 MQTT_USER    = os.environ.get('MQTT_USERNAME') or None
 MQTT_PASS    = os.environ.get('MQTT_PASSWORD') or None
 TOPIC_PREFIX = f'hive/{ROBOT_ID}'
+
+# hive_camera_bridge's WebRTC signaling port — same container/host as this
+# node (see cmd/webrtc_offer above), so "localhost" is always correct here
+# regardless of where the gateway itself is running.
+CAMERA_SIGNALING_PORT  = int(os.environ.get('CAMERA_SIGNALING_PORT', '8766'))
+_CAMERA_OFFER_TIMEOUT_S = 5.0
 
 # Teleop safety limits — same clamp the old gateway applied, now enforced at
 # the point closest to /cmd_vel (defense in depth: even a compromised or
@@ -274,13 +302,14 @@ class BridgeNode(Node):
             return
         self.get_logger().info(
             '[mqtt] connected — subscribing to cmd/task, cmd/velocity, cmd/goal, '
-            'cmd/cancel_nav, cmd/set_pose'
+            'cmd/cancel_nav, cmd/set_pose, cmd/webrtc_offer'
         )
         client.subscribe(_topic('cmd/task'), qos=1)
         client.subscribe(_topic('cmd/velocity'), qos=0)
         client.subscribe(_topic('cmd/goal'), qos=1)
         client.subscribe(_topic('cmd/cancel_nav'), qos=1)
         client.subscribe(_topic('cmd/set_pose'), qos=1)
+        client.subscribe(_topic('cmd/webrtc_offer'), qos=1)
 
     def _on_mqtt_disconnect(self, client, userdata, disconnect_flags, reason_code, properties=None):
         self.get_logger().warning(f'[mqtt] disconnected (reason={reason_code}) — paho will auto-reconnect')
@@ -303,6 +332,10 @@ class BridgeNode(Node):
         elif msg.topic == _topic('cmd/set_pose'):
             # Plain message construction + publish — no blocking calls.
             self._handle_cmd_set_pose(msg.payload)
+        elif msg.topic == _topic('cmd/webrtc_offer'):
+            # Blocking local HTTP call (urllib) to hive_camera_bridge — same
+            # "never block paho's network thread" concern as cmd/task/cmd/goal.
+            threading.Thread(target=self._handle_cmd_webrtc_offer, args=(msg.payload,), daemon=True).start()
 
     def _mqtt_publish(self, suffix: str, payload: dict, qos: int = 0, retain: bool = False):
         try:
@@ -642,6 +675,54 @@ class BridgeNode(Node):
             f'[cmd/set_pose] published /initialpose x={msg.pose.pose.position.x:.3f} '
             f'y={msg.pose.pose.position.y:.3f} frame={msg.header.frame_id}'
         )
+
+    # =========================================================================
+    # cmd/webrtc_offer — relay a browser's SDP offer to hive_camera_bridge's
+    # local signaling HTTP server and publish its answer back on
+    # webrtc/answer. See the module docstring's topic tree for why this
+    # exists (the gateway can no longer reach the camera bridge directly
+    # once they're split across networks — MQTT already crosses that gap
+    # for everything else, so signaling rides it too; the video itself
+    # never does).
+    # =========================================================================
+
+    def _handle_cmd_webrtc_offer(self, raw_payload: bytes):
+        try:
+            payload = json.loads(raw_payload)
+        except ValueError:
+            self.get_logger().warning('[cmd/webrtc_offer] invalid JSON, dropping')
+            return
+
+        offer_id = payload.get('offer_id')
+        sdp      = payload.get('sdp')
+        sdp_type = payload.get('type', 'offer')
+
+        if not offer_id or not sdp:
+            self.get_logger().warning('[cmd/webrtc_offer] missing offer_id/sdp, dropping')
+            return
+
+        self.get_logger().info(f'[cmd/webrtc_offer] relaying to local camera bridge (offer={offer_id})')
+
+        body = json.dumps({'sdp': sdp, 'type': sdp_type}).encode('utf-8')
+        req = urllib.request.Request(
+            f'http://localhost:{CAMERA_SIGNALING_PORT}/offer',
+            data=body,
+            headers={'Content-Type': 'application/json'},
+            method='POST',
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=_CAMERA_OFFER_TIMEOUT_S) as resp:
+                answer = json.loads(resp.read())
+            self._mqtt_publish('webrtc/answer', {
+                'offer_id': offer_id, 'sdp': answer['sdp'], 'type': answer['type'],
+            }, qos=1)
+            self.get_logger().info(f'[cmd/webrtc_offer] answered (offer={offer_id})')
+        except (urllib.error.URLError, OSError, ValueError, KeyError) as exc:
+            self.get_logger().warning(f'[cmd/webrtc_offer] camera bridge unreachable: {exc}')
+            self._mqtt_publish('webrtc/answer', {
+                'offer_id': offer_id,
+                'error': f'camera bridge unreachable on robot: {exc}',
+            }, qos=1)
 
     # =========================================================================
     # ROS subscriptions -> cached state (unchanged from ApiNode)

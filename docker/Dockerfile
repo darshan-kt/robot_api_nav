@@ -21,6 +21,16 @@ COPY package.json package-lock.json* ./
 RUN npm ci
 
 COPY . .
+
+# Vite inlines import.meta.env.VITE_* into the static bundle at build time —
+# there is no "runtime env var" for a Vite app once it's built, so this MUST
+# be set correctly here, not just in the running container's environment.
+# Passed through from docker-compose's build.args (see docker-compose.yml),
+# which reads it from the env-file (.env.aws / .env.robot / local default).
+# Changing it later means rebuilding this image, not just restarting it.
+ARG VITE_GATEWAY_URL=http://localhost:1717
+ENV VITE_GATEWAY_URL=${VITE_GATEWAY_URL}
+
 RUN npx vite build
 
 # ── Serve stage ──────────────────────────────────────────────────────────────

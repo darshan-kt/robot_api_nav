@@ -7,17 +7,23 @@ from the turtlebot3_burger_cam Gazebo model, see turtlebot_mcp_ros2's
 docker-compose.yml) and exposes an aiohttp HTTP server with one endpoint,
 POST /offer, implementing WebRTC's standard SDP offer/answer exchange.
 
-The gateway (backend/hive_api_gateway/app/main.py, POST /webrtc/offer)
-proxies browser offers here — the browser never talks to this node
-directly, same boundary the MQTT split enforces for every other robot-
-facing call. What's different from the MQTT path: once signaling
-completes, the actual video (RTP) flows directly between the browser and
-this node over an ICE-negotiated path — it does NOT go through the gateway
-or the MQTT broker. MQTT is not built for bulk real-time media; WebRTC's
-whole design is a signaling channel (arbitrarily proxyable) plus a
-separate, direct media transport. This node is where rclpy and aiortc are
-the only place both need to coexist — same "boundary node" shape as
-hive_mqtt_bridge, different protocol on the far side.
+The browser never talks to this node directly, and neither does the gateway
+anymore: hive_mqtt_bridge (same container/host as this node) relays the SDP
+offer in over MQTT (cmd/webrtc_offer) and calls POST /offer here over plain
+localhost HTTP, then publishes the answer back out (webrtc/answer) — see
+that node's _handle_cmd_webrtc_offer. This exists because the gateway
+(backend/hive_api_gateway) may run on a completely different network than
+the robot (see README's AWS section), so a direct HTTP call from the
+gateway to this port no longer reaches anywhere; MQTT already crosses that
+gap for every other command, so signaling rides it too. What's different
+from the MQTT path: once signaling completes, the actual video (RTP) flows
+directly between the browser and this node over an ICE-negotiated path — it
+does NOT go through the gateway, hive_mqtt_bridge, or the MQTT broker. MQTT
+is not built for bulk real-time media; WebRTC's whole design is a signaling
+channel (arbitrarily proxyable) plus a separate, direct media transport.
+This node is where rclpy and aiortc are the only place both need to
+coexist — same "boundary node" shape as hive_mqtt_bridge, different
+protocol on the far side.
 """
 import asyncio
 import os
