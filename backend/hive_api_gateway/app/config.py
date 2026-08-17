@@ -5,6 +5,7 @@ vars. Point MQTT_HOST at a different broker and the gateway runs anywhere.
 """
 import os
 from pathlib import Path
+from typing import Optional
 
 APP_PORT   = int(os.environ.get('APP_PORT', '1717'))
 
@@ -25,8 +26,49 @@ MQTT_PASSWORD = os.environ.get('MQTT_PASSWORD') or None
 ROBOT_ID     = os.environ.get('ROBOT_ID', 'robot-1')
 TOPIC_PREFIX = f'hive/{ROBOT_ID}'
 
-# Operational map folder (map.pgm + map.yaml) — override with ROBOT_MAP_DIR
+# Operational map folder — override with ROBOT_MAP_DIR. No fixed filename is
+# required inside it; see resolve_map_files() below for how the active
+# .pgm/.yaml pair is picked.
 ROBOT_MAP_DIR = os.environ.get('ROBOT_MAP_DIR', '/home/darshan/appstore/map')
+
+
+def resolve_map_files(map_dir: Path) -> tuple[Optional[Path], Optional[Path]]:
+    """
+    Auto-discover the active map .pgm + its .yaml sidecar inside map_dir —
+    no more assuming the files are literally named "map.pgm"/"map.yaml".
+    Drop any renamed map (e.g. home.pgm + home.yaml) straight into
+    ROBOT_MAP_DIR and this picks it up, no config change needed.
+
+    A .yaml's `image:` field is authoritative for which .pgm it describes
+    (standard ROS map_server convention) — so if a .yaml resolves to a real
+    .pgm next to it, that pair wins. Multiple .yaml files are broken ties by
+    most-recently-modified (the last map you dropped in). Only non-recursive:
+    subfolders like map/backup_maps/ are ignored, so old maps can be parked
+    there without becoming ambiguous candidates.
+    """
+    if not map_dir.exists():
+        return None, None
+
+    yaml_files = sorted(map_dir.glob('*.yaml'), key=lambda p: p.stat().st_mtime, reverse=True)
+    pgm_files  = sorted(map_dir.glob('*.pgm'),  key=lambda p: p.stat().st_mtime, reverse=True)
+
+    for yaml_path in yaml_files:
+        try:
+            import yaml as _yaml
+            with open(yaml_path) as f:
+                image_name = (_yaml.safe_load(f) or {}).get('image')
+        except Exception:
+            image_name = None
+        if not image_name:
+            continue
+        pgm_path = (map_dir / image_name).resolve()
+        if pgm_path.exists():
+            return pgm_path, yaml_path
+
+    # No .yaml pointed at a real .pgm (or none exist) — fall back to
+    # whichever files are simply newest, so a bare .pgm still gets served.
+    return (pgm_files[0] if pgm_files else None), (yaml_files[0] if yaml_files else None)
+
 
 # Bundled .pgm map images shipped alongside this package (used by
 # /map_image). Used to be resolved via ament_index_python's

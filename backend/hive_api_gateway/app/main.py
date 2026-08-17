@@ -564,13 +564,14 @@ async def health():
 
 @api_app.get("/api/map")
 async def get_robot_map():
-    """Serve the robot's operational map.pgm as a PNG image."""
-    pgm_path = Path(config.ROBOT_MAP_DIR) / "map.pgm"
-    if not pgm_path.exists():
+    """Serve whichever map .pgm is currently active in ROBOT_MAP_DIR as a PNG image."""
+    map_dir = Path(config.ROBOT_MAP_DIR)
+    pgm_path, _ = config.resolve_map_files(map_dir)
+    if pgm_path is None:
         raise HTTPException(
             status_code=404,
-            detail=f"map.pgm not found in {config.ROBOT_MAP_DIR}. "
-                   f"Set ROBOT_MAP_DIR env var to the correct folder.",
+            detail=f"No .pgm map found in {map_dir}. Drop a .pgm (and matching .yaml) "
+                   f"in there, or set ROBOT_MAP_DIR to the correct folder.",
         )
     img = Image.open(str(pgm_path))
     buf = io.BytesIO()
@@ -581,17 +582,18 @@ async def get_robot_map():
 
 @api_app.get("/api/map/meta")
 async def get_robot_map_meta():
-    """Return map.yaml metadata (resolution, origin) for the operational map."""
-    map_dir   = Path(config.ROBOT_MAP_DIR)
-    yaml_path = map_dir / "map.yaml"
+    """Return the active map's .yaml metadata (resolution, origin) — see resolve_map_files()."""
+    map_dir = Path(config.ROBOT_MAP_DIR)
+    pgm_path, yaml_path = config.resolve_map_files(map_dir)
     meta: dict = {
         "resolution": 0.05,
         "origin_x":   -10.0,
         "origin_y":   -10.0,
         "map_dir":    str(map_dir),
-        "pgm_exists": (map_dir / "map.pgm").exists(),
+        "map_file":   pgm_path.name if pgm_path else None,
+        "pgm_exists": pgm_path is not None,
     }
-    if yaml_path.exists():
+    if yaml_path is not None:
         try:
             import yaml
             with open(yaml_path) as f:
