@@ -418,38 +418,61 @@ For the full topic tree, endpoint list, and gotchas, see [README.md](README.md).
 
 ## 6. Quick setup — real robot (condensed)
 
-Full explanation of each step above (§4) — this is just the checklist once
+Full explanation of each step below: §4. This is just the checklist once
 you already know why.
 
-**On the robot side, modify `.env.robot`:**
+**On the AWS box, configure `.env.aws`** (skip if already done — one-time,
+not per-robot):
+```bash
+cd ~/robot_api_nav
+cp .env.aws.example .env.aws
+nano .env.aws
+```
+```bash
+CORS_ALLOWED_ORIGINS=http://13.51.74.241:5174
+VITE_GATEWAY_URL=http://13.51.74.241:1717
+MQTT_USERNAME=
+MQTT_PASSWORD=
+ROBOT_ID=robot-1
+```
+
+**On the robot, configure `.env.robot`:**
+```bash
+cd ~/appstore_mqtt
+cp .env.robot.example .env.robot
+nano .env.robot
+```
 ```bash
 ROBOT_MQTT_HOST=13.51.74.241     # the AWS Elastic IP — the only address
                                   # that actually needs to be reachable
 ROBOT_MQTT_PORT=1883             # or 8883 once broker TLS is on, see item 4 above
 MQTT_USERNAME=<value>            # must match .env.aws on AWS EXACTLY
 MQTT_PASSWORD=<value>            # must match .env.aws on AWS EXACTLY
-ROBOT_ID=robot-1
+ROBOT_ID=robot-1                 # must match ROBOT_ID in .env.aws EXACTLY
 ```
 
-**On the robot side, verify these topics are actually being published:**
+**On the robot, verify these topics are actually being published:**
 `/scan`, `/odom`, `/amcl_pose`, `/global_costmap/costmap`. If the camera
 driver's topic isn't `/camera/image_raw`, update `CAMERA_TOPIC` in
 `docker-compose.yml`'s `robotstore` service (see item 2 above) — change
 whatever doesn't match before moving on.
 
-**Final run:**
+**Build and run, on the robot:**
 ```bash
 # if the SBC is ARM (Raspberry Pi), set this first — docker-compose.yml
 # already supports it, sim testing so far has only exercised amd64:
 export ARCH_TAG=arm64
 
+# first time, or after any ROS 2 package change:
 make -f Makefile.aws build_robot
+# start robotstore, pointed at the AWS broker (NOT a local one):
 make -f Makefile.aws run_robot
+# verify it actually reached AWS:
+make -f Makefile.aws logs_robot     # look for "[mqtt] connected"
 ```
 
-**Smoke test, if any:**
+**Smoke test:**
 ```bash
-make -f Makefile.aws logs_robot     # look for "[mqtt] connected"
 curl http://13.51.74.241:1717/health   # expect robot_alive: true
 ```
 
@@ -457,3 +480,13 @@ curl http://13.51.74.241:1717/health   # expect robot_alive: true
 ```
 http://13.51.74.241:5174
 ```
+
+### Swapping the map afterwards
+
+No rebuild, no env changes — just:
+1. Drop the new map at `map/` with `.pgm` + `.yaml`, any filename (the
+   gateway auto-discovers it — see `map_loading_fix.md`).
+2. `git add`, commit, push.
+3. On the AWS box: `cd ~/robot_api_nav && git pull`.
+4. Refresh `http://13.51.74.241:5174/simple-route-planner` — that's it, the
+   new map is what Simple Route Planner shows.
