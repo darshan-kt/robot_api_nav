@@ -129,27 +129,36 @@ const [isUploading, setIsUploading] = useState(false);
         return () => window.removeEventListener('localdb-estop-updated', handleEStopUpdate as EventListener);
     }, [user]);
 
-    // Load map.pgm from public/ on mount — no gateway or robot connection required
+    // Load the robot's live map from the gateway (GET /api/map). The gateway
+    // reads map.pgm straight off the ./map folder (bind-mounted read-only,
+    // no caching) on every request, so dropping a new .pgm there is enough —
+    // the next page load picks it up with no frontend rebuild or copy step.
     useEffect(() => {
-        fetch('/map.pgm')
+        let objectUrl: string | null = null;
+
+        fetch(`${GATEWAY_URL}/api/map`)
             .then(r => {
                 if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                return r.arrayBuffer();
+                return r.blob();
             })
-            .then(buf => parsePgmToDataUrl(buf))
-            .then(dataUrl => {
+            .then(blob => {
                 robotMapLoadedRef.current = true;
+                objectUrl = URL.createObjectURL(blob);
                 const img = new Image();
-                img.src = dataUrl;
+                img.src = objectUrl;
                 img.onload = () => setMapImage(img);
             })
-            .catch(err => console.warn('[map] Failed to load /map.pgm:', err));
+            .catch(err => console.warn(`[map] Failed to load ${GATEWAY_URL}/api/map:`, err));
 
         // Fetch map metadata for coordinate conversion
         fetch(`${GATEWAY_URL}/api/map/meta`)
             .then(r => r.json())
             .then(m => setMapMeta({ resolution: m.resolution, origin_x: m.origin_x, origin_y: m.origin_y }))
             .catch(() => {}); // keep default [-10, -10] / 0.05 from map.yaml
+
+        return () => {
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
     }, []);
 
     const fetchAndInitializeMaps = useCallback(async () => {
@@ -221,7 +230,7 @@ const [isUploading, setIsUploading] = useState(false);
 
     // Load Map Image
     useEffect(() => {
-        // If map.pgm already loaded from public/, don't let the dummy map override it
+        // If the gateway map already loaded, don't let the dummy map override it
         if (robotMapLoadedRef.current) return;
 
         if (!selectedMap) {
