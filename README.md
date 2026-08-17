@@ -825,3 +825,15 @@ npx tsc --noEmit   # type check
 
 The frontend talks to the gateway at the URL in `src/lib/config.ts`
 (`GATEWAY_URL`, default `http://localhost:1717`).
+
+
+
+
+## Loading new map:
+Note: Make sure, env.aws.example file has both CORS_ALLOWED_ORIGINS && VITE_GATEWAY_URL file with exact ip-port(elastic IP and port or aws).
+1. Put the new map at /map folder with .pgm & .yaml with any name.
+2. Push at git.
+3. At AWS, get into working dir and git pull
+4. Then refresh the page!! Thats all you'll see new map loaded at simple_route_planner app
+
+

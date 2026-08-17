@@ -301,6 +301,101 @@ same AWS broker either way. What's actually different:
    should all be run physically before this steers anything with mass
    and momentum unsupervised.
 
+### Step-by-step — bring a real robot online
+
+The one thing worth understanding before touching any config: **the robot is
+an outbound-only client.** It dials out to `13.51.74.241:1883`, same as your
+laptop does today — nothing on AWS, and nothing on the public internet,
+ever dials *into* the robot. That means:
+
+- The robot does **not** need a static/public IP, a domain name, port
+  forwarding, or any router/firewall configuration on whatever network it's
+  on (home WiFi, phone hotspot, cellular) — outbound connections just work
+  on virtually any consumer network with no setup.
+- The **only** IP that matters to the running system is the one it's already
+  pointed at: the AWS Elastic IP, `13.51.74.241`, in `ROBOT_MQTT_HOST`.
+- The robot's *own* IP only matters for one unrelated reason: so **you** can
+  SSH into its onboard compute to install/configure/run things. That's a
+  one-time setup convenience, not something the robot advertises to AWS or
+  anything else.
+
+**0. Find the robot's IP** — only needed to SSH in and do the setup below.
+Whatever's easiest for your hardware:
+```bash
+# on the robot's SBC itself, with a keyboard/monitor attached once:
+hostname -I
+
+# or from another machine on the same network:
+ping raspberrypi.local          # mDNS hostname, works out of the box on
+                                 # stock Raspberry Pi OS
+# or check your router's DHCP client list / connected-devices page
+```
+
+**1. Install prerequisites on the robot's onboard compute** (e.g. Raspberry
+Pi 5) — Docker + Docker Compose, then the repo itself:
+```bash
+ssh <robot-user>@<robot-ip-from-step-0>
+
+curl -fsSL https://get.docker.com | sh      # if Docker isn't already installed
+sudo usermod -aG docker $USER && newgrp docker
+
+git clone https://github.com/darshan-kt/robot_api_nav.git ~/appstore_mqtt
+cd ~/appstore_mqtt
+git checkout mqtt
+```
+
+**2. Configure `.env.robot`** — on the robot, not your laptop:
+```bash
+cp .env.robot.example .env.robot
+nano .env.robot
+```
+```bash
+ROBOT_MQTT_HOST=13.51.74.241     # the AWS Elastic IP — the only address
+                                  # that actually needs to be reachable
+ROBOT_MQTT_PORT=1883             # or 8883 once broker TLS is on, see item 4 above
+MQTT_USERNAME=<value>            # must match .env.aws on AWS EXACTLY
+MQTT_PASSWORD=<value>            # must match .env.aws on AWS EXACTLY
+ROBOT_ID=robot-1                 # must match ROBOT_ID in .env.aws EXACTLY
+```
+
+**3. Point sensor topics at real hardware, not Gazebo.** Bring up your
+LIDAR, wheel odometry, and camera drivers however that hardware normally
+launches (outside the scope of this repo — e.g. `rplidar_ros2` is already
+vendored under `turtlebot_mcp_ros2/` if that's the LIDAR in use) so that
+`/scan`, `/odom`, `/amcl_pose`, `/global_costmap/costmap` are being published
+for real. If the camera driver's topic isn't `/camera/image_raw`, update
+`CAMERA_TOPIC` in `docker-compose.yml`'s `robotstore` service (see item 2
+above).
+
+**4. Build and run `robotstore` on the robot:**
+```bash
+# if the SBC is ARM (Raspberry Pi), set this first — docker-compose.yml
+# already supports it, sim testing so far has only exercised amd64:
+export ARCH_TAG=arm64
+
+make -f Makefile.aws build_robot
+make -f Makefile.aws run_robot
+
+make -f Makefile.aws logs_robot
+#  -> look for: [mqtt] connected — subscribing to cmd/task, cmd/velocity,
+#               cmd/goal, cmd/cancel_nav, cmd/set_pose, cmd/webrtc_offer
+```
+No `turtlebot_sim` step this time — real drivers are already publishing the
+topics that used to come from Gazebo.
+
+**5. Visualize and control it from AWS — from anywhere, not just the
+robot's network.** Once `logs_robot` shows a connected MQTT session, open:
+```
+http://13.51.74.241:5174
+```
+from any device with internet access — your laptop, your phone, doesn't
+need to be on the same WiFi as the robot. The browser only ever talks to
+AWS; AWS only ever talks to the robot over the MQTT connection the robot
+itself dialled out. Run the same smoke test as §3.D: `curl
+http://13.51.74.241:1717/health` should show `robot_alive: true`, then place
+a waypoint on Simple Route Planner → **SEND GOAL**, and toggle the camera on
+Remote Controller.
+
 ---
 
 ## 5. Quick reference — what lives where
