@@ -413,3 +413,47 @@ Remote Controller.
 | `turtlebot_mcp_ros2/` | Simulator — separate Makefile/compose project, unrelated to `Makefile.aws` |
 
 For the full topic tree, endpoint list, and gotchas, see [README.md](README.md).
+
+---
+
+## 6. Quick setup — real robot (condensed)
+
+Full explanation of each step above (§4) — this is just the checklist once
+you already know why.
+
+**On the robot side, modify `.env.robot`:**
+```bash
+ROBOT_MQTT_HOST=13.51.74.241     # the AWS Elastic IP — the only address
+                                  # that actually needs to be reachable
+ROBOT_MQTT_PORT=1883             # or 8883 once broker TLS is on, see item 4 above
+MQTT_USERNAME=<value>            # must match .env.aws on AWS EXACTLY
+MQTT_PASSWORD=<value>            # must match .env.aws on AWS EXACTLY
+ROBOT_ID=robot-1
+```
+
+**On the robot side, verify these topics are actually being published:**
+`/scan`, `/odom`, `/amcl_pose`, `/global_costmap/costmap`. If the camera
+driver's topic isn't `/camera/image_raw`, update `CAMERA_TOPIC` in
+`docker-compose.yml`'s `robotstore` service (see item 2 above) — change
+whatever doesn't match before moving on.
+
+**Final run:**
+```bash
+# if the SBC is ARM (Raspberry Pi), set this first — docker-compose.yml
+# already supports it, sim testing so far has only exercised amd64:
+export ARCH_TAG=arm64
+
+make -f Makefile.aws build_robot
+make -f Makefile.aws run_robot
+```
+
+**Smoke test, if any:**
+```bash
+make -f Makefile.aws logs_robot     # look for "[mqtt] connected"
+curl http://13.51.74.241:1717/health   # expect robot_alive: true
+```
+
+**Run the UI, from anywhere:**
+```
+http://13.51.74.241:5174
+```
