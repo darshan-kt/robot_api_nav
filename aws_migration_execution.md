@@ -446,8 +446,8 @@ nano .env.robot
 ROBOT_MQTT_HOST=13.51.74.241     # the AWS Elastic IP — the only address
                                   # that actually needs to be reachable
 ROBOT_MQTT_PORT=1883             # or 8883 once broker TLS is on, see item 4 above
-MQTT_USERNAME=<value>            # must match .env.aws on AWS EXACTLY
-MQTT_PASSWORD=<value>            # must match .env.aws on AWS EXACTLY
+MQTT_USERNAME=                   # must match .env.aws on AWS EXACTLY
+MQTT_PASSWORD=                   # must match .env.aws on AWS EXACTLY
 ROBOT_ID=robot-1                 # must match ROBOT_ID in .env.aws EXACTLY
 ```
 
