@@ -77,8 +77,8 @@ export const localDb = {
         uptime_hours: 120,
         last_mission: '',
         max_speed: 1.5,
-        max_linear_speed: 0.5,
-        max_turn_rate: 1.0,
+        max_linear_speed: 0.1,
+        max_turn_rate: 0.1,
         obstacle_distance: 0.5,
         navigation_mode: 'autonomous',
         localization_method: 'amcl',
@@ -92,7 +92,16 @@ export const localDb = {
     }
     // Backfill teleop limits on robots stored before these fields existed
     if (robots[0].max_linear_speed === undefined || robots[0].max_turn_rate === undefined) {
-      robots[0] = { max_linear_speed: 0.5, max_turn_rate: 1.0, ...robots[0] };
+      robots[0] = { max_linear_speed: 0.1, max_turn_rate: 0.1, ...robots[0] };
+      await setStoreArray('robots', robots);
+    }
+    // One-time correction: the factory default used to be 0.5/1.0, now 0.1/0.1.
+    // Self-healing for records already seeded under the old default — only
+    // touches a value still sitting at exactly the old default, so a value
+    // someone deliberately configured to 0.5 or 1.0 is left alone. Idempotent:
+    // once corrected it no longer matches 0.5/1.0, so this never re-fires.
+    if (robots[0].max_linear_speed === 0.5 && robots[0].max_turn_rate === 1.0) {
+      robots[0] = { ...robots[0], max_linear_speed: 0.1, max_turn_rate: 0.1 };
       await setStoreArray('robots', robots);
     }
     return robots[0];

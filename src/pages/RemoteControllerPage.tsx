@@ -38,8 +38,8 @@ export function RemoteControllerPage() {
 
     // Driving Parameters — defaults come from the Dashboard Configuration tab
     // (max_linear_speed / max_turn_rate on the robot record), bounded 0.1–0.8 / 0.1–1.0
-    const [maxLinearSpeed, setMaxLinearSpeed] = useState(0.5); // m/s
-    const [maxAngularSpeed, setMaxAngularSpeed] = useState(1.0); // rad/s
+    const [maxLinearSpeed, setMaxLinearSpeed] = useState(0.1); // m/s — lowest of the 0.1–0.8 range by default
+    const [maxAngularSpeed, setMaxAngularSpeed] = useState(0.1); // rad/s — lowest of the 0.1–1.0 range by default
 
     useEffect(() => {
         localDb.getRobot().then(robot => {
@@ -285,18 +285,24 @@ export function RemoteControllerPage() {
 
         setJoystickPos({ x: rx, y: ry });
 
-        // ── Sector-based command mapping (ROS conventions, yaw CCW-positive) ──
+        // ── Sector-based command mapping ──
         // Joystick angle in degrees, math convention: 0°=right, 90°=front(up),
         // 180°=left, 270°=back. Screen Y is inverted, hence -ry.
         //
+        // Angular sign is deliberately aligned to the on-screen keyboard
+        // tiles' (swapped) output, NOT raw REP-103 CCW-positive yaw — drag
+        // RIGHT must produce the same command as pressing the bottom-right
+        // key (D), drag LEFT the same as the bottom-left key (A), so the two
+        // input methods never fight each other:
+        //
         //   FRONT  (90°±10°)  → linear.x = +MAX_LINEAR   (like W)
         //   BACK   (270°±10°) → linear.x = -MAX_LINEAR   (like S — reverse)
-        //   LEFT   (180°±10°) → angular.z = +MAX_TURN (rotate left in place)
-        //   RIGHT  (0°±10°)   → angular.z = -MAX_TURN (rotate right in place)
-        //   FRONT-RIGHT (10°–80°)   → +0.5·MAX_LINEAR, -0.5·MAX_TURN
-        //   FRONT-LEFT  (100°–170°) → +0.5·MAX_LINEAR, +0.5·MAX_TURN
-        //   BACK-LEFT   (190°–260°) → -0.5·MAX_LINEAR, -0.5·MAX_TURN
-        //   BACK-RIGHT  (280°–350°) → -0.5·MAX_LINEAR, +0.5·MAX_TURN
+        //   LEFT   (180°±10°) → angular.z = -MAX_TURN (matches A)
+        //   RIGHT  (0°±10°)   → angular.z = +MAX_TURN (matches D)
+        //   FRONT-RIGHT (10°–80°)   → +0.5·MAX_LINEAR, +0.5·MAX_TURN
+        //   FRONT-LEFT  (100°–170°) → +0.5·MAX_LINEAR, -0.5·MAX_TURN
+        //   BACK-LEFT   (190°–260°) → -0.5·MAX_LINEAR, +0.5·MAX_TURN
+        //   BACK-RIGHT  (280°–350°) → -0.5·MAX_LINEAR, -0.5·MAX_TURN
         //   (reverse diagonals mirror like teleop_twist_keyboard: stick toward
         //    back-left drives the robot backward-left on screen)
         //   Deadzone: <25 % stick travel → no command
@@ -318,22 +324,22 @@ export function RemoteControllerPage() {
                 linear = maxLinearSpeed;
             } else if (within(270, 10)) {                // BACK → reverse
                 linear = -maxLinearSpeed;
-            } else if (within(180, 10)) {                // LEFT
-                angular = maxAngularSpeed;
-            } else if (within(0, 10)) {                  // RIGHT
+            } else if (within(180, 10)) {                // LEFT — matches A
                 angular = -maxAngularSpeed;
+            } else if (within(0, 10)) {                  // RIGHT — matches D
+                angular = maxAngularSpeed;
             } else if (angDeg > 10 && angDeg < 80) {     // FRONT-RIGHT
                 linear = 0.5 * maxLinearSpeed;
-                angular = -0.5 * maxAngularSpeed;
+                angular = 0.5 * maxAngularSpeed;
             } else if (angDeg > 100 && angDeg < 170) {   // FRONT-LEFT
                 linear = 0.5 * maxLinearSpeed;
-                angular = 0.5 * maxAngularSpeed;
+                angular = -0.5 * maxAngularSpeed;
             } else if (angDeg > 190 && angDeg < 260) {   // BACK-LEFT
                 linear = -0.5 * maxLinearSpeed;
-                angular = -0.5 * maxAngularSpeed;
+                angular = 0.5 * maxAngularSpeed;
             } else {                                     // BACK-RIGHT (280°–350°)
                 linear = -0.5 * maxLinearSpeed;
-                angular = 0.5 * maxAngularSpeed;
+                angular = -0.5 * maxAngularSpeed;
             }
         }
 
