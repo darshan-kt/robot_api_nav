@@ -67,7 +67,7 @@ export const localDb = {
       const defaultRobot: Robot = {
         id: 'robot-1',
         user_id: 'local-user',
-        name: 'AMR-X200',
+        name: 'Pilot-Robot-01',
         model: 'V2',
         serial_number: 'SN-001',
         firmware_version: '1.0.0',
@@ -116,11 +116,11 @@ export const localDb = {
     if (sensors.length === 0) {
       const now = new Date().toISOString();
       const dummySensors: RobotSensor[] = [
-        { id: 's1', robot_id: robotId, name: 'LiDAR VLP-16', model: 'Velodyne', status: 'active', frequency: '20Hz', temperature: 34, created_at: now },
+        { id: 's1', robot_id: robotId, name: 'LiDAR RPLidar-A2', model: 'Slamtec', status: 'active', frequency: '20Hz', temperature: 34, created_at: now },
         { id: 's2', robot_id: robotId, name: 'IMU BNO085', model: 'Bosch', status: 'active', frequency: '100Hz', temperature: 28, created_at: now },
-        { id: 's3', robot_id: robotId, name: 'Camera Front RealSense D435i', model: 'Intel', status: 'active', frequency: '30fps', temperature: 42, created_at: now },
+        { id: 's3', robot_id: robotId, name: 'Camera Front Orbbec Astra Pro', model: 'Orbbec', status: 'active', frequency: '30fps', temperature: 42, created_at: now },
         { id: 's4', robot_id: robotId, name: 'Camera Rear D435i', model: 'Intel', status: 'standby', frequency: '-', temperature: 26, created_at: now },
-        { id: 's5', robot_id: robotId, name: 'Ultrasonic HC-SR04', model: 'Generic', status: 'active', frequency: '40Hz', temperature: 25, created_at: now },
+        { id: 's5', robot_id: robotId, name: 'Ultrasonic HC-SR04', model: 'Generic', status: 'standby', frequency: '40Hz', temperature: 25, created_at: now },
         { id: 's6', robot_id: robotId, name: 'Wheel Encoder AMT102-V', model: 'CUI Devices', status: 'active', frequency: '500Hz', temperature: 30, created_at: now },
       ];
       await setStoreArray('sensors', dummySensors);

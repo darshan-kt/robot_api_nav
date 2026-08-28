@@ -167,8 +167,12 @@ export function RemoteControllerPage() {
     // Shared key→velocity mapping (ROS conventions — REP 103, CCW-positive yaw):
     //   W → linear.x  = +MAX_LINEAR_SPEED   (forward)
     //   S → linear.x  = -MAX_LINEAR_SPEED   (reverse)
-    //   A → angular.z = +MAX_TURN_RATE      (turn left)
-    //   D → angular.z = -MAX_TURN_RATE      (turn right)
+    //   D → angular.z = +MAX_TURN_RATE      (turn left)
+    //   A → angular.z = -MAX_TURN_RATE      (turn right)
+    // A/D deliberately swapped from the "natural" REP 103 letter mapping
+    // (requested remap — A now outputs what D used to, and vice versa).
+    // Arrow keys keep their spatial meaning (Left = turn left, Right = turn
+    // right) independent of the A/D swap.
     // Used by BOTH the physical keyboard and the clickable on-screen keys.
     const updateVelocityFromKeys = useCallback((keys: { [key: string]: boolean }) => {
         let linear = 0;
@@ -176,8 +180,8 @@ export function RemoteControllerPage() {
         else if (keys.s || keys.ArrowDown) linear = -maxLinearSpeed;
 
         let angular = 0;
-        if (keys.a || keys.ArrowLeft) angular = maxAngularSpeed;
-        else if (keys.d || keys.ArrowRight) angular = -maxAngularSpeed;
+        if (keys.d || keys.ArrowLeft) angular = maxAngularSpeed;
+        else if (keys.a || keys.ArrowRight) angular = -maxAngularSpeed;
 
         setLinearVel(linear);
         setAngularVel(angular);
@@ -190,6 +194,32 @@ export function RemoteControllerPage() {
             updateVelocityFromKeys(next);
             return next;
         });
+    }, [updateVelocityFromKeys]);
+
+    // Safety net against a stuck/latched key: mobile browsers can abort a
+    // held touch (long-press-to-select, scroll takeover, an incoming call,
+    // the screen locking) by firing touchcancel — or nothing at all if the
+    // tab/app is backgrounded — instead of touchend. Without this, a stuck
+    // "pressed" key keeps streaming a nonzero velocity at 10 Hz forever: the
+    // backend deadman only stops the robot when frames stop arriving
+    // entirely, not when they're wrong but still on time. Release every key
+    // the moment the page is hidden/backgrounded/loses focus.
+    useEffect(() => {
+        const releaseAllKeys = () => {
+            setKeysPressed(prev => {
+                const next = Object.fromEntries(Object.keys(prev).map(k => [k, false]));
+                updateVelocityFromKeys(next);
+                return next;
+            });
+        };
+        const handleVisibility = () => { if (document.hidden) releaseAllKeys(); };
+
+        window.addEventListener('blur', releaseAllKeys);
+        document.addEventListener('visibilitychange', handleVisibility);
+        return () => {
+            window.removeEventListener('blur', releaseAllKeys);
+            document.removeEventListener('visibilitychange', handleVisibility);
+        };
     }, [updateVelocityFromKeys]);
 
     // Keyboard Driving Event Handlers
@@ -327,6 +357,11 @@ export function RemoteControllerPage() {
             window.addEventListener('mouseup', handleJoystickEnd);
             window.addEventListener('touchmove', handleJoystickMove, { passive: false });
             window.addEventListener('touchend', handleJoystickEnd);
+            // touchcancel: same browser-interrupts-the-touch scenario as the
+            // keyboard tiles above (long-press takeover, screen lock, etc.)
+            // — without this, isDragging can get stuck true with no
+            // touchend ever coming to clear it.
+            window.addEventListener('touchcancel', handleJoystickEnd);
         }
 
         return () => {
@@ -334,6 +369,7 @@ export function RemoteControllerPage() {
             window.removeEventListener('mouseup', handleJoystickEnd);
             window.removeEventListener('touchmove', handleJoystickMove);
             window.removeEventListener('touchend', handleJoystickEnd);
+            window.removeEventListener('touchcancel', handleJoystickEnd);
         };
     }, [isDragging, handleJoystickMove, handleJoystickEnd]);
 
@@ -508,7 +544,12 @@ export function RemoteControllerPage() {
     const isS = keysPressed.s || keysPressed.ArrowDown;
     const isD = keysPressed.d || keysPressed.ArrowRight;
 
-    // Clickable on-screen key tile — press-and-hold drives, release stops
+    // Clickable on-screen key tile — press-and-hold drives, release stops.
+    // touchAction: 'none' stops the browser from taking over a held touch
+    // for its own scroll/long-press/text-selection gestures — that takeover
+    // is what fires touchcancel (never touchend) and leaves the key latched
+    // "on" with no release event ever coming. onTouchCancel is the other
+    // half: even with touchAction set, always handle the cancel path too.
     const KeyTile = ({ k, active }: { k: 'w' | 'a' | 's' | 'd'; active: boolean }) => (
         <button
             onMouseDown={() => setKeyState(k, true)}
@@ -516,7 +557,9 @@ export function RemoteControllerPage() {
             onMouseLeave={() => { if (keysPressed[k]) setKeyState(k, false); }}
             onTouchStart={(e) => { e.preventDefault(); setKeyState(k, true); }}
             onTouchEnd={(e) => { e.preventDefault(); setKeyState(k, false); }}
+            onTouchCancel={(e) => { e.preventDefault(); setKeyState(k, false); }}
             onContextMenu={(e) => e.preventDefault()}
+            style={{ touchAction: 'none' }}
             className={`w-10 h-10 rounded-lg flex items-center justify-center border font-bold text-xs transition-all select-none cursor-pointer ${
                 active
                     ? 'bg-emerald-500 text-background border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)] scale-95'

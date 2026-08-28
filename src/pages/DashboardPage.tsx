@@ -438,10 +438,10 @@ export function DashboardPage() {
                                         <table className="w-full text-left text-sm">
                                             <tbody className="divide-y divide-border/30">
                                                 {[
-                                                    ['OS Distribution', 'Ubuntu 22.04.3 LTS'],
-                                                    ['Robot Middleware', 'ROS2 Humble Desktop'],
+                                                    ['OS Distribution', 'Ubuntu 24.04 LTS'],
+                                                    ['Robot Middleware', 'ROS2 Jazzy Desktop'],
                                                     ['DDS / RMW', 'CycloneDDS · Domain 0'],
-                                                    ['SoC Module', 'NVIDIA Jetson Orin NX'],
+                                                    ['SoC Module', 'Raspberry Pi 5'],
                                                     ['Memory Pool', '16GB 128-bit LPDDR5'],
                                                     ['Kernel Version', '5.15.0-generic'],
                                                     ['AI Accelerator', 'Ampere Architecture']
