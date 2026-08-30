@@ -392,8 +392,9 @@ export function DashboardPage() {
                                         <h3 className="font-semibold text-text">ROS 2 Runtime — Live</h3>
                                     </div>
                                     <div className="p-6 space-y-5">
-                                        <TopicRow name="/global_costmap/costmap" age={health.topics['/global_costmap/costmap']} threshold={5} />
+                                        <TopicRow name="/cmd_vel" age={health.topics['/cmd_vel']} threshold={5} />
                                         <TopicRow name="/scan" age={health.topics['/scan']} threshold={5} />
+                                        <TopicRow name="/camera/image_raw" age={health.topics['/camera/image_raw']} threshold={5} />
                                         <TopicRow name="/amcl_pose" age={localisation ? localisation.age_s : null} threshold={9999} note="publishes on motion" />
                                         <TopicRow name="/plan" age={plan && plan.points.length > 0 ? plan.age_s : null} threshold={15} note={missionActive ? 'route active' : 'idle'} />
 

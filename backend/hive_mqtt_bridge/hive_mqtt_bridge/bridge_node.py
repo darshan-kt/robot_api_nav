@@ -67,7 +67,7 @@ from nav2_msgs.action import NavigateThroughPoses
 from hive_interfaces.action import ExecuteBehavior
 from geometry_msgs.msg import PoseStamped, Twist
 from nav_msgs.msg import OccupancyGrid, Odometry, Path as NavPath
-from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import Image, LaserScan
 from geometry_msgs.msg import PoseWithCovarianceStamped
 
 import paho.mqtt.client as mqtt
@@ -230,17 +230,18 @@ class BridgeNode(Node):
         self._plan_lock   = threading.Lock()
         self.create_subscription(NavPath, '/plan', self._plan_cb, 10)
 
-        self._costmap_time = 0.0
-        self._scan_time    = 0.0
-        self._alive_lock   = threading.Lock()
+        self._cmd_vel_time     = 0.0
+        self._camera_image_time = 0.0
+        self._alive_lock       = threading.Lock()
 
         _be_qos = QoSProfile(depth=5, reliability=QoSReliabilityPolicy.BEST_EFFORT)
         self._latest_scan_msg = None
         self._scan_received   = False
         self._scan_data_lock  = threading.Lock()
 
-        self.create_subscription(OccupancyGrid, '/global_costmap/costmap', self._costmap_cb, _be_qos)
         self.create_subscription(LaserScan, '/scan', self._scan_cb, _be_qos)
+        self.create_subscription(Twist, '/cmd_vel', self._cmd_vel_incoming_cb, _be_qos)
+        self.create_subscription(Image, '/camera/image_raw', self._camera_image_cb, _be_qos)
 
         self._odom_x        = 0.0
         self._odom_y        = 0.0
@@ -286,11 +287,11 @@ class BridgeNode(Node):
         self.create_timer(1.0, self._localisation_tick)
         self.create_timer(0.5, self._plan_tick)
         self.create_timer(1.0, self._scan_tick)
-        self.create_timer(1.0, self._health_tick)
+        self.create_timer(3.0, self._health_tick)
         self.create_timer(0.1, self._cmd_vel_watchdog_tick)
 
         self.get_logger().info('hive_mqtt_bridge up — subscribed to /amcl_pose, /plan, '
-                                '/global_costmap/costmap, /scan, /odom')
+                                '/scan, /odom, /cmd_vel, /camera/image_raw')
 
     # =========================================================================
     # MQTT callbacks
@@ -772,16 +773,20 @@ class BridgeNode(Node):
                 return None
             return {**self._latest_plan, 'age_s': round(age, 2)}
 
-    def _costmap_cb(self, msg: OccupancyGrid):
-        with self._alive_lock:
-            self._costmap_time = time.monotonic()
-
     def _scan_cb(self, msg: LaserScan):
         with self._alive_lock:
             self._scan_time = time.monotonic()
         with self._scan_data_lock:
             self._latest_scan_msg = msg
             self._scan_received   = True
+
+    def _cmd_vel_incoming_cb(self, msg: Twist):
+        with self._alive_lock:
+            self._cmd_vel_time = time.monotonic()
+
+    def _camera_image_cb(self, msg: Image):
+        with self._alive_lock:
+            self._camera_image_time = time.monotonic()
 
     def get_scan(self) -> dict | None:
         with self._scan_data_lock:
@@ -802,14 +807,17 @@ class BridgeNode(Node):
     def is_robot_alive(self, max_age: float = 5.0) -> dict:
         now = time.monotonic()
         with self._alive_lock:
-            costmap_age = (now - self._costmap_time) if self._costmap_time > 0 else None
-            scan_age    = (now - self._scan_time)    if self._scan_time    > 0 else None
-        costmap_ok = costmap_age is not None and costmap_age < max_age
-        scan_ok    = scan_age    is not None and scan_age    < max_age
+            cmd_vel_age    = (now - self._cmd_vel_time)      if self._cmd_vel_time      > 0 else None
+            scan_age       = (now - self._scan_time)          if self._scan_time         > 0 else None
+            camera_age     = (now - self._camera_image_time)  if self._camera_image_time > 0 else None
+        cmd_vel_ok    = cmd_vel_age  is not None and cmd_vel_age  < max_age
+        scan_ok       = scan_age     is not None and scan_age     < max_age
+        camera_ok     = camera_age   is not None and camera_age   < max_age
         return {
-            'alive':         costmap_ok and scan_ok,
-            'costmap_age_s': round(costmap_age, 2) if costmap_age is not None else None,
-            'scan_age_s':    round(scan_age,    2) if scan_age    is not None else None,
+            'alive':              cmd_vel_ok or scan_ok or camera_ok,
+            'cmd_vel_age_s':      round(cmd_vel_age,  2) if cmd_vel_age  is not None else None,
+            'scan_age_s':         round(scan_age,     2) if scan_age     is not None else None,
+            'camera_image_age_s': round(camera_age,   2) if camera_age   is not None else None,
         }
 
     def _odom_cb(self, msg: Odometry):
@@ -867,8 +875,9 @@ class BridgeNode(Node):
             'ros_ready':   True,
             'robot_alive': status['alive'],
             'topics': {
-                '/global_costmap/costmap': status['costmap_age_s'],
-                '/scan':                   status['scan_age_s'],
+                '/cmd_vel':          status['cmd_vel_age_s'],
+                '/scan':             status['scan_age_s'],
+                '/camera/image_raw': status['camera_image_age_s'],
             },
         }, qos=1, retain=True)
 

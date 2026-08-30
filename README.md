@@ -325,8 +325,9 @@ pose** (no manual "2D Pose Estimate" needed).
 ### 3. Use it
 
 1. Open **http://localhost:5174**
-2. Wait for the blinking **Connected** badge (requires `/global_costmap/costmap`
-   and `/scan` both alive on the robot side, relayed through `hive/<id>/health`)
+2. Wait for the blinking **Connected** badge (requires any of `/cmd_vel`,
+   `/scan`, or `/camera/image_raw` alive on the robot side, relayed through
+   `hive/<id>/health`)
 3. Open **Simple Route Planner** — the robot map loads automatically and the blue
    GPS-style marker blinks at the robot's AMCL pose
 4. **PLACE WAYPOINT** → click positions on the map (click again to set heading)

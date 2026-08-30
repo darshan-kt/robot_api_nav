@@ -540,7 +540,7 @@ async def health():
     """
     Returns gateway + robot liveness.
 
-    robot_alive is True only when BOTH /global_costmap/costmap and /scan have
+    robot_alive is True when ANY of /cmd_vel, /scan, or /camera/image_raw have
     published within the last 5 seconds on the robot side (computed by the
     bridge, forwarded here as hive/<id>/health). If the bridge process dies
     or its MQTT connection drops uncleanly, its Last Will and Testament
@@ -552,7 +552,7 @@ async def health():
         return {
             "ros_ready": False,
             "robot_alive": False,
-            "topics": {"/global_costmap/costmap": None, "/scan": None},
+            "topics": {"/cmd_vel": None, "/scan": None, "/camera/image_raw": None},
             "mqtt_connected": mqtt_client.connected,
         }
     return {**mqtt_client.latest_health, "mqtt_connected": True}
