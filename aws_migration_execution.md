@@ -371,6 +371,8 @@ above).
 ```bash
 # if the SBC is ARM (Raspberry Pi), set this first — docker-compose.yml
 # already supports it, sim testing so far has only exercised amd64:
+cp .env.robot.example .env.robot
+
 export ARCH_TAG=arm64
 
 make -f Makefile.aws build_robot
@@ -490,3 +492,5 @@ No rebuild, no env changes — just:
 3. On the AWS box: `cd ~/robot_api_nav && git pull`.
 4. Refresh `http://13.51.74.241:5174/simple-route-planner` — that's it, the
    new map is what Simple Route Planner shows.
+
+git pull and build it for new map update!!
