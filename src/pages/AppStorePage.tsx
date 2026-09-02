@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, ArrowRight, OctagonX, Smartphone, Route, CircuitBoard } from 'lucide-react';
+import { LayoutDashboard, ArrowRight, OctagonX, Smartphone, Route, CircuitBoard, Eye } from 'lucide-react';
 import { Header } from '../components/layout/Header';
 import { Badge, Skeleton } from '../components/ui/Layout';
 
@@ -27,6 +27,7 @@ export function AppStorePage() {
         purple:  '167 139 250',
         amber:   '251 191 36',
         teal:    '45 212 191',
+        blue:    '96 165 250',
     };
 
     const themeStyles: Record<string, string> = {
@@ -35,6 +36,7 @@ export function AppStorePage() {
         purple:  'bg-purple-400/10 text-purple-400 ring-purple-400/20',
         amber:   'bg-amber-400/10 text-amber-400 ring-amber-400/20',
         teal:    'bg-teal-400/10 text-teal-400 ring-teal-400/20',
+        blue:    'bg-blue-400/10 text-blue-400 ring-blue-400/20',
     };
 
     const primaryApps = [
@@ -87,6 +89,16 @@ export function AppStorePage() {
             description: 'Tune RPLIDAR A2 and Orbbec Astra Pro parameters, read the verified setup steps, and watch simulated live data respond in real time',
             version: 'v1.0.0',
             path: '/hardware-sensors-lab'
+        },
+        {
+            id: 'visual-tracking-lab',
+            title: 'Visual Tracking Lab',
+            icon: Eye,
+            theme: 'blue' as const,
+            tag: 'Lab',
+            description: 'Calibrate HSV color thresholds live, then watch a real, hand-rolled vision pipeline track a target and compute steering — including the STOP-not-search safety behavior when the target is lost',
+            version: 'v1.0.0',
+            path: '/visual-tracking-lab'
         },
     ];
 

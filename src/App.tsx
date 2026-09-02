@@ -7,6 +7,7 @@ import { EmergencyStopPage } from './pages/EmergencyStopPage';
 import { RemoteControllerPage } from './pages/RemoteControllerPage';
 import { SimpleRoutePlannerPage } from './pages/SimpleRoutePlannerPage';
 import { HardwareSensorsLabPage } from './pages/HardwareSensorsLabPage';
+import { VisualTrackingLabPage } from './pages/VisualTrackingLabPage';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 
 function App() {
@@ -63,6 +64,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <HardwareSensorsLabPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/visual-tracking-lab"
+            element={
+              <ProtectedRoute>
+                <VisualTrackingLabPage />
               </ProtectedRoute>
             }
           />
