@@ -10,6 +10,7 @@ Four suites, each run in the place its code actually lives.
 | **Frontend** | `src/lib`, `src/hooks` (vitest + jsdom) | Host | `npm test` |
 | **System** | The live stack: HTTP, MQTT round trips, WebSocket streams, container wiring | Host, stack must be up | `make test-system` |
 | **AWS latency** | Ack margins and the `/goal_pose` fallback under injected latency | Host, **broker only** | `make test-latency` |
+| **Hardware & Sensors Lab (e2e)** | Both device cards fully expanded — parameters, running instructions, SIMULATED DATA banner, live mock viz, raw-frame inspector, learning toggles | Host, opt-in only | `npm run test:e2e` |
 
 `make test` runs everything that needs no running stack. `make test-all` adds the
 system suite.

@@ -6,6 +6,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { EmergencyStopPage } from './pages/EmergencyStopPage';
 import { RemoteControllerPage } from './pages/RemoteControllerPage';
 import { SimpleRoutePlannerPage } from './pages/SimpleRoutePlannerPage';
+import { HardwareSensorsLabPage } from './pages/HardwareSensorsLabPage';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 
 function App() {
@@ -54,6 +55,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <SimpleRoutePlannerPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/hardware-sensors-lab"
+            element={
+              <ProtectedRoute>
+                <HardwareSensorsLabPage />
               </ProtectedRoute>
             }
           />
