@@ -298,7 +298,7 @@ export function DashboardPage() {
                                                     /lidar/i.test(s.name) && scan
                                                         ? `${scan.ranges.filter(r => r !== null).length} beams · max ${scan.range_max.toFixed(1)} m`
                                                         : /encoder/i.test(s.name) && robotState
-                                                            ? `odom ${robotState.x.toFixed(2)}, ${robotState.y.toFixed(2)} m`
+                                                            ? `odom ${(robotState.x ?? 0).toFixed(2)}, ${(robotState.y ?? 0).toFixed(2)} m`
                                                             : null
                                                 } />
                                         ))}

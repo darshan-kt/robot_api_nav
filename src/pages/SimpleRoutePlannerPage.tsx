@@ -674,17 +674,6 @@ const [isUploading, setIsUploading] = useState(false);
         setMousePos({ x, y });
     };
 
-    const removeWaypoint = async (idxToRemove: number) => {
-        const updated = waypoints.filter((_, idx) => idx !== idxToRemove).map((wp, idx) => ({
-            ...wp,
-            order: idx + 1,
-            label: `WP-${idx + 1}`
-        }));
-        setWaypoints(updated);
-        if (missionId) {
-            await localDb.saveMission({ id: missionId, waypoints: updated });
-        }
-    };
 
     const clearAll = async () => {
         setWaypoints([]);
@@ -777,10 +766,11 @@ const [isUploading, setIsUploading] = useState(false);
 
     // Direct Nav2 dispatch — POST /nav_goal → gateway → cmd/goal (MQTT) →
     // bridge sends the WHOLE waypoint list as one NavigateThroughPoses
-    // action goal, bypassing the Hive route planner entirely. Unlike the
-    // old single-pose /goal_pose version, this genuinely carries a route —
-    // NavigateThroughPoses accepts multiple poses, so every waypoint on the
-    // map goes out in one call. Deliberately doesn't touch
+    // action goal, bypassing the Hive route planner entirely. This genuinely
+    // carries a route — NavigateThroughPoses accepts multiple poses, so every
+    // waypoint on the map goes out in one call. If that action doesn't answer,
+    // the bridge degrades to a single-pose /goal_pose publish and says so in
+    // nav_mode; the response handling below surfaces that. Deliberately doesn't touch
     // missionId/localDb: this isn't part of the mission-tracking system,
     // it's a direct, ad-hoc dispatch.
     const sendGoal = async () => {
@@ -797,10 +787,26 @@ const [isUploading, setIsUploading] = useState(false);
 
             if (response.ok) {
                 setGoalSentSuccess(true);
-                showToast(
-                    `Route (${waypoints.length} waypoint${waypoints.length > 1 ? 's' : ''}) dispatched directly to Nav2.`,
-                    'success'
-                );
+                const body = await response.json().catch(() => ({}));
+                // nav_mode="goal_pose_fallback" means the robot's
+                // NavigateThroughPoses action never answered and the bridge
+                // fell back to publishing ONE pose on /goal_pose. The robot
+                // is moving either way, but only to the final waypoint, and
+                // CANCEL NAV can't stop it — don't report that as a clean
+                // route dispatch.
+                if (body?.nav_mode === 'goal_pose_fallback') {
+                    showToast(
+                        `Nav2 action didn't respond — sent only the final waypoint via /goal_pose. ` +
+                        `${waypoints.length > 1 ? `${waypoints.length - 1} intermediate waypoint(s) dropped. ` : ''}` +
+                        `CANCEL NAV will not stop this goal.`,
+                        'info'
+                    );
+                } else {
+                    showToast(
+                        `Route (${waypoints.length} waypoint${waypoints.length > 1 ? 's' : ''}) dispatched directly to Nav2.`,
+                        'success'
+                    );
+                }
                 setTimeout(() => setGoalSentSuccess(false), 3000);
             } else {
                 const body = await response.json().catch(() => ({}));

@@ -7,7 +7,13 @@
 **Files:** [`src/pages/RemoteControllerPage.tsx`](../src/pages/RemoteControllerPage.tsx) ·
 [`src/hooks/useVelocityCtrl.ts`](../src/hooks/useVelocityCtrl.ts) ·
 [`src/hooks/useScan.ts`](../src/hooks/useScan.ts) ·
-[`backend/hive_api_gateway/hive_api_gateway/main.py`](../backend/hive_api_gateway/hive_api_gateway/main.py)
+[`backend/hive_api_gateway/app/main.py`](../backend/hive_api_gateway/app/main.py) ·
+[`backend/hive_mqtt_bridge/hive_mqtt_bridge/bridge_node.py`](../backend/hive_mqtt_bridge/hive_mqtt_bridge/bridge_node.py)
+
+> **Post-2026-refactor note:** the gateway no longer imports rclpy. It speaks
+> MQTT only; `hive_mqtt_bridge` owns the ROS 2 side. The teleop contract below
+> is unchanged, but there is now a SECOND deadman on the bridge (500 ms, keyed
+> off MQTT arrival) behind the gateway's 400 ms one — see §3.
 
 ---
 
@@ -24,7 +30,7 @@ flowchart LR
         LOOP["10 Hz transmit loop\n(non-latched)"]
     end
 
-    subgraph Gateway["hive_api gateway :1717 (FastAPI + rclpy)"]
+    subgraph Gateway["hive_api gateway :1717 (FastAPI + aiomqtt, no rclpy)"]
         WSV["/api/velocity_ctrl\n(WebSocket)"]
         WSS["/api/scan\n(WebSocket, 1 Hz)"]
         WST["/api/telemetry\n(WebSocket, 10 Hz)"]
@@ -112,6 +118,7 @@ model makes *presence of traffic* the proof of operator intent.
 | 1 | **Command clamp** | gateway | `linear` clamped to ±0.8 m/s, `angular` to ±1.0 rad/s regardless of what any client sends |
 | 2 | **Deadman watchdog** | gateway | If the last published command was non-zero and **no frame arrives within 400 ms** → publish one zero `Twist`. Covers browser crash, tab close, Wi-Fi drop |
 | 3 | **Disconnect stop** | gateway | Socket closes while the robot is moving → final zero `Twist` in the `finally` block |
+| 3b | **Bridge deadman** | bridge | Independent 500 ms watchdog keyed off MQTT message arrival — covers a healthy browser↔gateway socket with a dead gateway↔broker↔bridge hop, which the gateway's own watchdog cannot see |
 | 4 | **Release stop ×2** | browser | Joystick release / key-up sends an immediate zero AND the 10 Hz loop sends its own transition zero |
 | 5 | **E-STOP button** | browser | Immediate zero frame + local velocity reset |
 | 6 | **UI slider bounds** | browser + dashboard | Limits configurable only within 0.1–0.8 m/s and 0.1–1.0 rad/s |

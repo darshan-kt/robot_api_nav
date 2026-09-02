@@ -108,6 +108,7 @@ rosidl_typesupport_fastrtps_cpp/hive_interfaces/action/detail/dds_fastrtps/execu
 rosidl_typesupport_fastrtps_cpp/hive_interfaces/action/detail/dds_fastrtps/execute_behavior__type_support.cpp: /opt/ros/humble/share/geometry_msgs/msg/Vector3.idl
 rosidl_typesupport_fastrtps_cpp/hive_interfaces/action/detail/dds_fastrtps/execute_behavior__type_support.cpp: /opt/ros/humble/share/geometry_msgs/msg/Vector3Stamped.idl
 rosidl_typesupport_fastrtps_cpp/hive_interfaces/action/detail/dds_fastrtps/execute_behavior__type_support.cpp: /opt/ros/humble/share/geometry_msgs/msg/VelocityStamped.idl
+rosidl_typesupport_fastrtps_cpp/hive_interfaces/action/detail/dds_fastrtps/execute_behavior__type_support.cpp: /opt/ros/humble/share/geometry_msgs/msg/VelocityWithCovarianceStamped.idl
 rosidl_typesupport_fastrtps_cpp/hive_interfaces/action/detail/dds_fastrtps/execute_behavior__type_support.cpp: /opt/ros/humble/share/geometry_msgs/msg/Wrench.idl
 rosidl_typesupport_fastrtps_cpp/hive_interfaces/action/detail/dds_fastrtps/execute_behavior__type_support.cpp: /opt/ros/humble/share/geometry_msgs/msg/WrenchStamped.idl
 rosidl_typesupport_fastrtps_cpp/hive_interfaces/action/detail/dds_fastrtps/execute_behavior__type_support.cpp: /opt/ros/humble/share/std_msgs/msg/Bool.idl

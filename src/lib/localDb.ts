@@ -53,6 +53,22 @@ async function migrateLegacyData(): Promise<void> {
   await idb.put('meta', true, 'migrated');
 }
 
+/**
+ * Collision-resistant record id.
+ *
+ * These used to be `prefix + Date.now()`, which means two records created
+ * within the same millisecond get the SAME id — and since every save does
+ * findIndex(id) and replaces on a hit, the second silently overwrote the
+ * first. Placing two waypoint zones or saving two missions in quick
+ * succession was enough to lose one.
+ *
+ * crypto.randomUUID() is deliberately not used: it is unavailable outside a
+ * secure context, and this app is served over plain HTTP on the robot LAN.
+ */
+function newId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export const localDb = {
   // Auth (unchanged – static stub)
   getUser: async () => {
@@ -92,7 +108,7 @@ export const localDb = {
     }
     // Backfill teleop limits on robots stored before these fields existed
     if (robots[0].max_linear_speed === undefined || robots[0].max_turn_rate === undefined) {
-      robots[0] = { max_linear_speed: 0.1, max_turn_rate: 0.1, ...robots[0] };
+      robots[0] = { ...robots[0], max_linear_speed: robots[0].max_linear_speed ?? 0.1, max_turn_rate: robots[0].max_turn_rate ?? 0.1 };
       await setStoreArray('robots', robots);
     }
     // One-time correction: the factory default used to be 0.5/1.0, now 0.1/0.1.
@@ -150,7 +166,7 @@ export const localDb = {
     await migrateLegacyData();
     const stops = await getStoreArray<EmergencyStop>('emergency_stops');
     const newStop: EmergencyStop = {
-      id: 'estop-' + Date.now().toString(),
+      id: newId('estop'),
       robot_id: robotId,
       user_id: 'local-user',
       is_active: isActive,
@@ -176,7 +192,7 @@ export const localDb = {
     const maps = await getStoreArray<MapData>('maps');
     const newMap: MapData = {
       ...mapData,
-      id: mapData.id || 'map-' + Date.now().toString(),
+      id: mapData.id || newId('map'),
       created_at: mapData.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
     } as MapData;
@@ -197,7 +213,7 @@ export const localDb = {
     const zones = await getStoreArray<SafetyZone>('safety_zones');
     const newZone: SafetyZone = {
       ...zoneData,
-      id: zoneData.id || 'zone-' + Date.now().toString(),
+      id: zoneData.id || newId('zone'),
       created_at: zoneData.created_at || new Date().toISOString(),
     } as SafetyZone;
     const idx = zones.findIndex(z => z.id === newZone.id);
@@ -223,7 +239,7 @@ export const localDb = {
     const missions = await getStoreArray<Mission>('missions');
     const newMission: Mission = {
       ...missionData,
-      id: missionData.id || 'mission-' + Date.now().toString(),
+      id: missionData.id || newId('mission'),
       created_at: missionData.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
     } as Mission;
@@ -251,27 +267,27 @@ export const localDb = {
   // Schedules
   getSchedules: async (): Promise<ScheduledRoute[]> => {
     await migrateLegacyData();
-    const schedules = await getStoreArray<ScheduledRoute>('scheduled_routes');
+    const schedules = await getStoreArray<ScheduledRoute>('schedules');
     return schedules.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   },
   saveSchedule: async (scheduleData: Partial<ScheduledRoute>): Promise<ScheduledRoute> => {
     await migrateLegacyData();
-    const schedules = await getStoreArray<ScheduledRoute>('scheduled_routes');
+    const schedules = await getStoreArray<ScheduledRoute>('schedules');
     const newSchedule: ScheduledRoute = {
       ...scheduleData,
-      id: scheduleData.id || 'schedule-' + Date.now().toString(),
+      id: scheduleData.id || newId('schedule'),
       created_at: scheduleData.created_at || new Date().toISOString(),
     } as ScheduledRoute;
     const idx = schedules.findIndex(s => s.id === newSchedule.id);
     if (idx !== -1) schedules[idx] = newSchedule; else schedules.push(newSchedule);
-    await setStoreArray('scheduled_routes', schedules);
+    await setStoreArray('schedules', schedules);
     return newSchedule;
   },
   deleteSchedule: async (id: string): Promise<void> => {
     await migrateLegacyData();
-    let schedules = await getStoreArray<ScheduledRoute>('scheduled_routes');
+    let schedules = await getStoreArray<ScheduledRoute>('schedules');
     schedules = schedules.filter(s => s.id !== id);
-    await setStoreArray('scheduled_routes', schedules);
+    await setStoreArray('schedules', schedules);
   },
 
   // Executions
@@ -285,7 +301,7 @@ export const localDb = {
     const executions = await getStoreArray<ScheduleExecution>('executions');
     const newExecution: ScheduleExecution = {
       ...executionData,
-      id: executionData.id || 'exec-' + Date.now().toString(),
+      id: executionData.id || newId('exec'),
       created_at: executionData.created_at || new Date().toISOString(),
     } as ScheduleExecution;
     const idx = executions.findIndex(e => e.id === newExecution.id);
@@ -307,7 +323,7 @@ export const localDb = {
     const conversations = await getStoreArray<Conversation>('conversations');
     const newConv: Conversation = {
       ...convData,
-      id: convData.id || 'conv-' + Date.now().toString(),
+      id: convData.id || newId('conv'),
       updated_at: new Date().toISOString(),
       messages: convData.messages || [],
     } as Conversation;

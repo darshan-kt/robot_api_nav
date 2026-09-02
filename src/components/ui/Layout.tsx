@@ -78,7 +78,8 @@ export function Button({
     disabled,
     onClick,
     icon: Icon,
-    type = 'button'
+    type = 'button',
+    title
 }: {
     children: React.ReactNode;
     variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
@@ -88,6 +89,7 @@ export function Button({
     onClick?: () => void;
     icon?: any;
     type?: 'button' | 'submit';
+    title?: string;
 }) {
     const variants = {
         primary: 'bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-500 shadow-lg shadow-emerald-500/20',
@@ -108,6 +110,7 @@ export function Button({
             type={type}
             disabled={disabled}
             onClick={onClick}
+            title={title}
             className={`
         inline-flex items-center justify-center gap-2 font-medium rounded-xl border transition-all duration-200
         disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]

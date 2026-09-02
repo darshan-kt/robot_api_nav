@@ -92,7 +92,13 @@ async def create_task(payload: dict):
     response shape/status codes match what this endpoint always returned.
     """
     task_id = payload.get("task_id") or str(uuid.uuid4())
-    bid     = int(payload.get("id", 0))
+    try:
+        bid = int(payload.get("id", 0))
+    except (TypeError, ValueError):
+        # A non-numeric id used to raise straight out of the handler, which
+        # uvicorn turns into a bare 500 + traceback. It's client input, so
+        # it gets the same 422 treatment as a malformed waypoint.
+        raise HTTPException(422, f"'id' must be an integer, got {payload.get('id')!r}")
 
     logger.info(f"[/tasks] id={bid} behavior='{payload.get('behavior_name','')}' task={task_id}")
 
@@ -205,11 +211,20 @@ async def nav_goal(payload: dict):
     if not ack.get("accepted"):
         raise HTTPException(status_code=500, detail=ack.get("detail", "Goal rejected"))
 
+    # nav_mode says WHICH path on the robot actually took the goal:
+    # "navigate_through_poses" is the full-route action; "goal_pose_fallback"
+    # means the action handshake didn't answer and the bridge published the
+    # final waypoint to /goal_pose instead — one pose, not cancellable. The
+    # UI has to surface that difference, so pass it straight through along
+    # with the bridge's own explanation.
     return {
         "accepted":       True,
         "goal_id":        ack.get("goal_id"),
         "waypoint_count": ack.get("waypoint_count", len(poses)),
         "source":         source,
+        "nav_mode":       ack.get("nav_mode", "navigate_through_poses"),
+        "cancellable":    ack.get("cancellable", True),
+        "detail":         ack.get("detail"),
     }
 
 

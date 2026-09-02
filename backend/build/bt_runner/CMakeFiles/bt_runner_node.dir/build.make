@@ -93,7 +93,7 @@ bt_runner_node_EXTERNAL_OBJECTS =
 bt_runner_node: CMakeFiles/bt_runner_node.dir/src/runner.cpp.o
 bt_runner_node: CMakeFiles/bt_runner_node.dir/build.make
 bt_runner_node: /opt/ros/humble/lib/librclcpp_action.so
-bt_runner_node: /opt/ros/humble/lib/libbehaviortree_cpp.so
+bt_runner_node: /opt/ros/humble/lib/x86_64-linux-gnu/libbehaviortree_cpp.so
 bt_runner_node: /opt/ros/humble/lib/libsensor_msgs__rosidl_typesupport_fastrtps_c.so
 bt_runner_node: /opt/ros/humble/lib/libsensor_msgs__rosidl_typesupport_fastrtps_cpp.so
 bt_runner_node: /opt/ros/humble/lib/libsensor_msgs__rosidl_typesupport_introspection_c.so

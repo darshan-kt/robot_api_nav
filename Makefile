@@ -54,7 +54,9 @@ IMAGE_ROBOTSTORE    ?= robotstore_image:$(ARCH_ROBOTSTORE)
         build_image_robotstore build_robotstore \
         build_frontend \
         run_frontend \
-        logs stop rm clean check-thermal
+        logs stop rm clean check-thermal \
+        test test-all test-unit test-integration test-frontend \
+        test-ros test-system test-setup test-latency measure-rtt
 
 platform:
 	@echo "Detected host: $(UNAME_M) → HOST_PLATFORM=$(HOST_PLATFORM)"
@@ -254,3 +256,75 @@ clean:
 # =============================================================================
 check-thermal:
 	@./scripts/check_pi5_health.sh
+
+
+# =============================================================================
+# Tests — see docs/TESTING.md for what each suite covers and why.
+#
+# VENV is created with --system-site-packages so the host's rclpy stays
+# visible; only aiomqtt + the test tooling get installed into it.
+# =============================================================================
+VENV := .venv-test
+PYTEST := $(VENV)/bin/python -m pytest
+ROBOTSTORE_CONTAINER := $(shell docker ps --format '{{.Names}}' | grep robotstore | head -1)
+
+test-setup:
+	@test -d $(VENV) || python3 -m venv --system-site-packages $(VENV)
+	@$(VENV)/bin/pip install -q -r tests/requirements-dev.txt
+	@test -d node_modules || npm install
+	@echo "test environment ready"
+
+## Everything that needs no running stack.
+test: test-unit test-integration test-frontend
+
+## Adds the live-stack suite (docker compose up -d first).
+test-all: test test-ros test-system
+
+test-unit:
+	@$(PYTEST) tests/unit -q
+
+test-integration:
+	@$(PYTEST) tests/integration -q
+
+test-frontend:
+	@npm test
+
+## Runs inside the robotstore container — rclpy/nav2_msgs/hive_interfaces
+## only exist (correctly built) there; backend/install/ on the host is a
+## stale build tree from another machine.
+test-ros:
+	@if [ -z "$(ROBOTSTORE_CONTAINER)" ]; then \
+		echo "robotstore container is not running — start it with 'make run'"; exit 1; \
+	fi
+	@docker exec $(ROBOTSTORE_CONTAINER) bash -lc 'source /opt/ros/humble/setup.bash && \
+		source ~/ros2_ws/install/setup.bash && \
+		cd ~/ros2_ws/src/hive_mqtt_bridge && python3 -m pytest test -q -p no:cacheprovider'
+	@docker exec $(ROBOTSTORE_CONTAINER) bash -lc 'source /opt/ros/humble/setup.bash && \
+		source ~/ros2_ws/install/setup.bash && \
+		cd ~/ros2_ws/src/hive_camera_bridge && python3 -m pytest test -q -p no:cacheprovider'
+
+## Skips itself when the stack is down. Motion tests stay skipped unless
+## HIVE_ALLOW_MOTION=1 — see docs/TESTING.md.
+test-system:
+	@$(PYTEST) tests/system -q
+
+## Static gates the CI/build path relies on.
+test-lint:
+	@npm run typecheck
+	@npm run lint
+
+## Measure the real gateway<->broker<->bridge round trip. Run this FROM WHERE
+## THE GATEWAY RUNS (the AWS box after the cutover). Needs the bridge up.
+##   make measure-rtt MQTT_TARGET=13.51.74.241
+MQTT_TARGET ?= localhost
+measure-rtt:
+	@$(VENV)/bin/python scripts/measure_mqtt_rtt.py --host $(MQTT_TARGET)
+
+## Gate the configured ack timeouts against a measured round trip.
+##   make test-latency RTT_MS=350
+RTT_MS ?= 0
+test-latency:
+	@HIVE_RTT_P99_MS=$(RTT_MS) $(PYTEST) tests/unit/test_timeout_margins.py -q -s
+	@echo
+	@echo "Empirical break point (needs only the broker: docker compose up -d mqtt-broker):"
+	@$(PYTEST) tests/system/test_aws_latency.py -k breaking_point -q -s

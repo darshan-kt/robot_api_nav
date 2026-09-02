@@ -64,7 +64,7 @@
 			[
 				{
 					"backtrace" : 3,
-					"define" : "BTCPP_LIBRARY_VERSION=\"4.9.0\""
+					"define" : "BTCPP_LIBRARY_VERSION=\"4.9.1\""
 				},
 				{
 					"backtrace" : 3,
@@ -291,7 +291,7 @@
 				"role" : "flags"
 			},
 			{
-				"fragment" : "-Wl,-rpath,/opt/ros/humble/lib:/home/charlie/ros2_ws/install/hive_interfaces/lib",
+				"fragment" : "-Wl,-rpath,/opt/ros/humble/lib:/opt/ros/humble/lib/x86_64-linux-gnu:/home/charlie/ros2_ws/install/hive_interfaces/lib",
 				"role" : "libraries"
 			},
 			{
@@ -301,7 +301,7 @@
 			},
 			{
 				"backtrace" : 3,
-				"fragment" : "/opt/ros/humble/lib/libbehaviortree_cpp.so",
+				"fragment" : "/opt/ros/humble/lib/x86_64-linux-gnu/libbehaviortree_cpp.so",
 				"role" : "libraries"
 			},
 			{

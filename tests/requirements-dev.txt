@@ -1,0 +1,18 @@
+# Test-only dependencies for the Python suite.
+# Install into an isolated venv that can still see system rclpy:
+#   python3 -m venv --system-site-packages .venv-test
+#   .venv-test/bin/pip install -r tests/requirements-dev.txt
+pytest>=8.0
+pytest-asyncio>=0.24
+httpx>=0.27
+
+# Runtime deps of hive_api_gateway that the unit/integration suite imports
+# directly (mirrors backend/hive_api_gateway/requirements.txt).
+fastapi>=0.115
+aiomqtt>=2.0
+Pillow>=10.0
+PyYAML>=6.0
+
+# System tests only — talks to the live broker the same way the bridge does.
+paho-mqtt>=1.6
+websockets>=12.0

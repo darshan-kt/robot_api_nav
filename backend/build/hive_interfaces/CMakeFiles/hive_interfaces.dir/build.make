@@ -97,6 +97,7 @@ CMakeFiles/hive_interfaces: /opt/ros/humble/share/geometry_msgs/msg/TwistWithCov
 CMakeFiles/hive_interfaces: /opt/ros/humble/share/geometry_msgs/msg/Vector3.idl
 CMakeFiles/hive_interfaces: /opt/ros/humble/share/geometry_msgs/msg/Vector3Stamped.idl
 CMakeFiles/hive_interfaces: /opt/ros/humble/share/geometry_msgs/msg/VelocityStamped.idl
+CMakeFiles/hive_interfaces: /opt/ros/humble/share/geometry_msgs/msg/VelocityWithCovarianceStamped.idl
 CMakeFiles/hive_interfaces: /opt/ros/humble/share/geometry_msgs/msg/Wrench.idl
 CMakeFiles/hive_interfaces: /opt/ros/humble/share/geometry_msgs/msg/WrenchStamped.idl
 CMakeFiles/hive_interfaces: /opt/ros/humble/share/action_msgs/msg/GoalInfo.idl

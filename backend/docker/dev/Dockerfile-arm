@@ -108,6 +108,37 @@ RUN mkdir -p ${ROS_WS_SRC} && chown -R ${USERNAME}:${USERNAME} ${WORKSPACE}
 RUN rosdep init || true && rosdep update
 
 # ============================================================================
+# behaviortree_cpp (v4) library path fixup — REQUIRED for bt_runner to build
+# ============================================================================
+# ros-humble-behaviortree-cpp 4.x installs its library into the multiarch
+# directory (lib/x86_64-linux-gnu/ or lib/aarch64-linux-gnu/), but the ament
+# export script it ships with searches ONLY lib/:
+#
+#   find_library(_lib NAMES "behaviortree_cpp"
+#                PATHS "${behaviortree_cpp_DIR}/../../../lib"
+#                NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+#
+# NO_DEFAULT_PATH means CMAKE_LIBRARY_PATH/LD_LIBRARY_PATH can't rescue it, so
+# find_package(behaviortree_cpp REQUIRED) dies with "exports the library
+# 'behaviortree_cpp' which couldn't be found" and bt_runner never configures.
+# Linking it back where ament looks is the only fix that works. Globbing the
+# triplet keeps this correct on both amd64 and arm64, and the pattern matches
+# only libbehaviortree_cpp.so* — NOT the separately-installed v3 library.
+#
+# Deliberately placed LAST, not next to the apt install that creates the
+# problem: every layer above this one clones from GitHub (oh-my-zsh, its two
+# zsh plugins, the CycloneDDS source build) and those are anonymous clones
+# that GitHub rejects with a 401 on git-upload-pack whenever the build host's
+# IP is being rate-limited. Inserting a layer above them invalidates their
+# cache and turns a working build into a failing one that has nothing to do
+# with this fixup. Keep cheap local fixups at the bottom.
+# ============================================================================
+RUN find /opt/ros/humble/lib -maxdepth 2 -name 'libbehaviortree_cpp.so*' \
+        -not -path '/opt/ros/humble/lib/libbehaviortree_cpp.so*' \
+        -exec ln -sf {} /opt/ros/humble/lib/ \; \
+    && test -e /opt/ros/humble/lib/libbehaviortree_cpp.so
+
+# ============================================================================
 # Final Setup
 # ============================================================================
 USER ${USERNAME}

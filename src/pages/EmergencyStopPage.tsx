@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useAuth } from '../hooks/useAuth';
 import { OctagonX, ShieldAlert, KeyRound, AlertOctagon, History } from 'lucide-react';
 import { localDb } from '../lib/localDb';
 import { Header } from '../components/layout/Header';

@@ -6,7 +6,19 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // Build outputs and vendored trees: turtlebot_mcp_ros2/ ships colcon build
+  // artifacts whose .ts files are CMake depend-files, not TypeScript, and
+  // backend/{build,install} are colcon spaces. Linting them produces only
+  // parse errors.
+  globalIgnores([
+    'dist',
+    'coverage',
+    'node_modules',
+    'turtlebot_mcp_ros2',
+    'backend/build',
+    'backend/install',
+    '.venv-test',
+  ]),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

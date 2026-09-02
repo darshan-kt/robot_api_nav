@@ -39,3 +39,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Test venv (see docs/TESTING.md) and coverage output
+.venv-test/
+coverage/
+.pytest_cache/
