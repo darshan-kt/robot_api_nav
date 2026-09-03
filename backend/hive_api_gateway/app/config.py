@@ -90,10 +90,11 @@ TASK_ACK_TIMEOUT_S = 15.0
 # AWS hop doesn't 504 a goal the bridge already accepted.
 GOAL_ACK_TIMEOUT_S = 12.0
 
-# /cancel_nav — no wait_for_server involved, cancellation should be near
-# instant; widened from 5s for the same AWS round-trip margin as the above,
-# not because cancellation itself got slower.
-CANCEL_ACK_TIMEOUT_S = 10.0
+# /cancel_nav — cancellation itself is near-instant (one Nav2 service call);
+# matched to GOAL_ACK_TIMEOUT_S so a slow/lossy AWS hop can't report a
+# cancel as failed when it actually landed — this is ack margin, not how
+# long the robot takes to stop.
+CANCEL_ACK_TIMEOUT_S = 12.0
 
 # /webrtc/offer relays the browser's SDP offer to hive_camera_bridge over
 # MQTT (cmd/webrtc_offer -> webrtc/answer), same as every other robot-bound
