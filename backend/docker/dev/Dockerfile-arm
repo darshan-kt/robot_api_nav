@@ -66,6 +66,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && pip3 install --no-cache-dir Pillow paho-mqtt aiortc aiohttp
 
+# ros-humble-behaviortree-cpp ships its .so under Debian's multiarch triplet
+# dir (lib/<triplet>/libbehaviortree_cpp.so), but the package's own exported
+# ament_cmake_export_libraries-extras.cmake only searches straight in lib/
+# (NO_DEFAULT_PATH/NO_CMAKE_FIND_ROOT_PATH), so downstream `find_package
+# (behaviortree_cpp REQUIRED)` fails with "exports the library
+# 'behaviortree_cpp' which couldn't be found" even though the file exists.
+# Symlink it into lib/ so ament's find_library() can see it.
+RUN ARCH_TRIPLET=$(dpkg-architecture -qDEB_HOST_MULTIARCH) && \
+    for f in /opt/ros/humble/lib/${ARCH_TRIPLET}/libbehaviortree_cpp*.so*; do \
+      [ -e "$f" ] && ln -sf "$f" "/opt/ros/humble/lib/$(basename "$f")"; \
+    done; true
+
 # ============================================================================
 # Oh My Zsh Setup
 # ============================================================================

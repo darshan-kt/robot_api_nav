@@ -1,1 +1,0 @@
-/home/charlie/ros2_ws/build/bt_runner/ament_cmake_environment_hooks/local_setup.sh
