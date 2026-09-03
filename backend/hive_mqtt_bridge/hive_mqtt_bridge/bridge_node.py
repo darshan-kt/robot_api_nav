@@ -24,8 +24,7 @@ Topic tree (prefix "hive/<ROBOT_ID>/", ROBOT_ID from env, default "robot-1"):
   Commands (gateway -> broker -> bridge):
     cmd/task         mission dispatch
     cmd/velocity     teleop {linear, angular}
-    cmd/goal         direct Nav2 dispatch (NavigateThroughPoses, with a
-                     /goal_pose fallback — see _handle_cmd_goal)
+    cmd/goal         direct /goal_pose dispatch — see _handle_cmd_goal
     cmd/cancel_nav   cancel active nav goal
     cmd/set_pose     set AMCL initial pose
     cmd/webrtc_offer relay browser SDP offer to local camera bridge
@@ -52,6 +51,7 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 
+from action_msgs.srv import CancelGoal as CancelGoalSrv
 from nav2_msgs.action import NavigateThroughPoses
 from hive_interfaces.action import ExecuteBehavior
 from geometry_msgs.msg import (
@@ -86,15 +86,15 @@ CAMERA_SIGNALING_PORT = int(
 
 _CAMERA_OFFER_TIMEOUT_S = 5.0
 
-# cmd/goal dispatch budget. The gateway gives up on goal/ack after 6s
-# (GOAL_ACK_TIMEOUT_S), so everything below — server discovery AND the
-# action goal-request round trip — has to finish inside this, with margin
-# left over for the MQTT hop out to AWS.
-_GOAL_ACK_BUDGET_S = 4.5
+# cmd/goal — how long to wait for DDS to discover a /goal_pose subscriber
+# (Nav2's NavigateToPose navigator) before giving up. A bare instant check
+# right after the bridge or Nav2 (re)starts can lose this race even though
+# both are up, since graph discovery isn't instantaneous.
+_GOAL_POSE_SUBSCRIBER_WAIT_S = 3.0
 
-# Slice of that budget spent waiting for /navigate_through_poses to show up
-# in the graph.
-_NAV_SERVER_WAIT_S = 2.0
+# cmd/cancel_nav — same discovery-settle reasoning, for the
+# /navigate_to_pose cancel service.
+_CANCEL_SERVICE_WAIT_S = 3.0
 
 # Teleop safety limits
 _TELEOP_MAX_LINEAR = 0.8
@@ -285,6 +285,16 @@ class BridgeNode(Node):
             PoseStamped,
             "/goal_pose",
             10,
+        )
+
+        # cmd/goal has no action goal handle of its own to cancel — Nav2's
+        # NavigateToPose navigator turns /goal_pose into an action goal on
+        # itself, in-process. Cancelling that goal from here means calling
+        # its action server's cancel service directly; an empty GoalInfo
+        # (zero UUID, zero stamp) cancels every goal currently active on it.
+        self._nav_to_pose_cancel_client = self.create_client(
+            CancelGoalSrv,
+            "/navigate_to_pose/_action/cancel_goal",
         )
 
         # =====================================================================
@@ -1130,27 +1140,21 @@ class BridgeNode(Node):
         raw_payload: bytes,
     ):
         """
-        Direct Nav2 dispatch, with a bounded wait and a /goal_pose fallback.
+        Publish the selected map pose straight to /goal_pose.
 
-        NavigateThroughPoses stays the primary path — it is the only one
-        that carries a whole route in a single call, and the only one that
-        yields real accept/reject semantics plus a goal handle for
-        cmd/cancel_nav.
+        Same thing as:
+          ros2 topic pub --once /goal_pose geometry_msgs/msg/PoseStamped
+            "{header: {frame_id: 'map'}, pose: {...}}"
 
-        The fallback exists because that action's goal-request round trip
-        can hang indefinitely while plain topics keep flowing: actions are
-        built on services, which need unicast request/reply, whereas topic
-        traffic and graph discovery do not. So wait_for_server can succeed
-        and send_goal_async still never answer. send_goal_async carries no
-        timeout of its own, so without a bound here the handler simply
-        never acks and the gateway 504s.
+        Nav2's NavigateToPose navigator subscribes to /goal_pose and turns
+        it into an action goal on itself, in-process — no action handshake
+        for this handler to wait on, so nothing here can hang the way the
+        NavigateThroughPoses round trip used to.
 
-        On timeout we publish the route's final pose to /goal_pose, which
-        Nav2's NavigateToPose navigator picks up and relays into an action
-        goal on itself, in-process — no cross-process handshake involved.
-        Deliberately degraded, and the ack says so: that is NavigateToPose,
-        so intermediate waypoints are dropped and there is no goal handle
-        for cmd/cancel_nav to cancel.
+        poses is a route (possibly from a multi-point plan), but /goal_pose
+        only carries one pose: the last entry, i.e. the destination the
+        operator actually selected on the route planner's map. Earlier
+        entries are route shaping and are dropped.
         """
         payload = _parse_command(
             raw_payload,
@@ -1160,11 +1164,6 @@ class BridgeNode(Node):
 
         if payload is None:
             return
-
-        deadline = (
-            time.monotonic()
-            + _GOAL_ACK_BUDGET_S
-        )
 
         goal_id = (
             payload.get("goal_id")
@@ -1191,134 +1190,6 @@ class BridgeNode(Node):
             )
             return
 
-        # Single-shot guard — whichever of this thread and the action
-        # response callback gets here first is the one that acks. Without
-        # it a late Nav2 response would publish a second goal/ack for the
-        # same goal_id.
-        ack_lock = threading.Lock()
-        ack_claimed = [False]
-
-        def _claim_ack():
-            with ack_lock:
-                if ack_claimed[0]:
-                    return False
-
-                ack_claimed[0] = True
-                return True
-
-        responded = threading.Event()
-
-        server_wait = min(
-            _NAV_SERVER_WAIT_S,
-            max(
-                0.0,
-                deadline - time.monotonic(),
-            ),
-        )
-
-        if not self.nav_through_client.wait_for_server(
-            timeout_sec=server_wait
-        ):
-            # Deliberately NOT falling back here. If the action server never
-            # showed up in the graph, Nav2 isn't running at all — and then
-            # nothing is subscribed to /goal_pose either, so publishing there
-            # would report success for a goal no one will ever act on. The
-            # fallback is for the opposite case: server advertised, handshake
-            # wedged.
-            self.get_logger().warning(
-                "[cmd/goal] NavigateThroughPoses not "
-                f"advertised within {server_wait:.1f}s"
-            )
-
-            if _claim_ack():
-                self._mqtt_publish(
-                    "goal/ack",
-                    {
-                        "goal_id": goal_id,
-                        "accepted": False,
-                        "detail": (
-                            "Nav2 NavigateThroughPoses "
-                            "unavailable"
-                        ),
-                    },
-                    qos=1,
-                )
-            return
-
-        nav_goal = NavigateThroughPoses.Goal()
-
-        nav_goal.poses = [
-            _dict_to_pose_stamped(p)
-            for p in poses
-        ]
-
-        nav_goal.behavior_tree = ""
-
-        self.get_logger().info(
-            f"[cmd/goal] dispatching "
-            f"{len(poses)} waypoint(s), "
-            f"goal={goal_id}"
-        )
-
-        send_goal_future = (
-            self.nav_through_client.send_goal_async(
-                nav_goal
-            )
-        )
-
-        send_goal_future.add_done_callback(
-            lambda fut: (
-                self._on_direct_nav_goal_response(
-                    fut,
-                    goal_id,
-                    len(poses),
-                    _claim_ack,
-                    responded,
-                )
-            )
-        )
-
-        if responded.wait(
-            timeout=max(
-                0.0,
-                deadline - time.monotonic(),
-            )
-        ):
-            # Callback ran and published goal/ack.
-            return
-
-        # Nav2 never answered. The future stays pending on purpose — if it
-        # ever does resolve, the callback finds the ack already claimed and
-        # only registers the handle so cmd/cancel_nav still works.
-        self.get_logger().warning(
-            "[cmd/goal] no goal response from Nav2 within "
-            f"{_GOAL_ACK_BUDGET_S:.1f}s (goal={goal_id}) "
-            "— falling back to /goal_pose"
-        )
-
-        if _claim_ack():
-            self._dispatch_goal_pose(
-                goal_id,
-                poses,
-                (
-                    "Nav2 answered no goal request within "
-                    f"{_GOAL_ACK_BUDGET_S:.1f}s"
-                ),
-            )
-
-    def _dispatch_goal_pose(
-        self,
-        goal_id,
-        poses,
-        reason,
-    ):
-        """
-        Degraded dispatch — publish the route's FINAL pose to /goal_pose.
-
-        The last waypoint is the operator's actual destination; the ones
-        before it are route shaping NavigateToPose cannot express, so they
-        are dropped and the ack reports how many.
-        """
         target = _dict_to_pose_stamped(
             poses[-1]
         )
@@ -1330,11 +1201,26 @@ class BridgeNode(Node):
         # us the goal was refused — the one thing we CAN check is whether
         # anybody is listening. With no subscriber this would drop on the
         # floor, and acking "accepted" for it would be a straight lie.
+        # Poll rather than checking once: right after a bridge/Nav2 restart,
+        # DDS discovery can lag a beat even though both sides are actually
+        # up, and a bare instant check would misreport that as Nav2 being
+        # down.
+        subscriber_deadline = (
+            time.monotonic()
+            + _GOAL_POSE_SUBSCRIBER_WAIT_S
+        )
+
+        while (
+            self.goal_pose_pub.get_subscription_count() < 1
+            and time.monotonic() < subscriber_deadline
+        ):
+            time.sleep(0.1)
+
         if self.goal_pose_pub.get_subscription_count() < 1:
             self.get_logger().error(
-                "[cmd/goal] /goal_pose fallback "
-                "unavailable — no subscriber on "
-                f"/goal_pose (goal={goal_id})"
+                "[cmd/goal] /goal_pose has no subscriber after "
+                f"{_GOAL_POSE_SUBSCRIBER_WAIT_S:.1f}s "
+                f"(goal={goal_id}) — is Nav2 running?"
             )
 
             self._mqtt_publish(
@@ -1343,9 +1229,8 @@ class BridgeNode(Node):
                     "goal_id": goal_id,
                     "accepted": False,
                     "detail": (
-                        f"{reason}; /goal_pose fallback "
-                        "also unavailable (nothing "
-                        "subscribed to /goal_pose)"
+                        "Nothing subscribed to /goal_pose — "
+                        "is Nav2 running?"
                     ),
                 },
                 qos=1,
@@ -1361,146 +1246,37 @@ class BridgeNode(Node):
 
         dropped = len(poses) - 1
 
-        detail = (
-            f"{reason}; published final waypoint to "
-            "/goal_pose instead"
-        )
+        detail = None
 
         if dropped > 0:
-            detail += (
-                f" ({dropped} intermediate waypoint(s) "
-                "dropped — /goal_pose carries a single "
-                "pose)"
+            detail = (
+                f"{dropped} intermediate waypoint(s) dropped "
+                "— /goal_pose carries a single pose"
             )
 
         self.get_logger().info(
-            "[cmd/goal] /goal_pose fallback "
+            "[cmd/goal] /goal_pose "
             f"x={target.pose.position.x:.2f} "
             f"y={target.pose.position.y:.2f} "
-            f"(goal={goal_id}) — {detail}"
+            f"(goal={goal_id})"
         )
+
+        ack = {
+            "goal_id": goal_id,
+            "accepted": True,
+            "waypoint_count": 1,
+            "nav_mode": "goal_pose_direct",
+            "cancellable": True,
+        }
+
+        if detail:
+            ack["detail"] = detail
 
         self._mqtt_publish(
             "goal/ack",
-            {
-                "goal_id": goal_id,
-                "accepted": True,
-                "waypoint_count": 1,
-                "nav_mode": "goal_pose_fallback",
-                "cancellable": False,
-                "detail": detail,
-            },
+            ack,
             qos=1,
         )
-
-    def _on_direct_nav_goal_response(
-        self,
-        fut,
-        goal_id,
-        waypoint_count,
-        claim_ack,
-        responded,
-    ):
-        try:
-            try:
-                gh = fut.result()
-
-            except Exception as exc:
-                self.get_logger().warning(
-                    f"[cmd/goal] goal response failed: {exc}"
-                )
-
-                if claim_ack():
-                    self._mqtt_publish(
-                        "goal/ack",
-                        {
-                            "goal_id": goal_id,
-                            "accepted": False,
-                            "detail": str(exc),
-                        },
-                        qos=1,
-                    )
-                return
-
-            if gh is None or not gh.accepted:
-                if claim_ack():
-                    self._mqtt_publish(
-                        "goal/ack",
-                        {
-                            "goal_id": goal_id,
-                            "accepted": False,
-                            "detail": "Nav2 goal rejected",
-                        },
-                        qos=1,
-                    )
-                return
-
-            self.get_logger().info(
-                f"[cmd/goal] NavigateThroughPoses accepted "
-                f"(goal={goal_id})"
-            )
-
-            if claim_ack():
-                self._mqtt_publish(
-                    "goal/ack",
-                    {
-                        "goal_id": goal_id,
-                        "accepted": True,
-                        "waypoint_count": waypoint_count,
-                        "nav_mode": "navigate_through_poses",
-                        "cancellable": True,
-                    },
-                    qos=1,
-                )
-
-            else:
-                # Arrived after the /goal_pose fallback already acked. Nav2
-                # preempts the NavigateToPose goal with this one, which is
-                # the better outcome anyway — it carries the full route —
-                # and tracking the handle is what lets cmd/cancel_nav stop
-                # it.
-                self.get_logger().info(
-                    "[cmd/goal] late Nav2 acceptance "
-                    f"(goal={goal_id}) — ack already sent via "
-                    "/goal_pose fallback; tracking handle for "
-                    "cmd/cancel_nav"
-                )
-
-            self._track_active_nav_goal(
-                gh,
-                on_result=lambda rf: (
-                    self._on_direct_nav_result(
-                        goal_id,
-                        rf,
-                    )
-                ),
-            )
-
-        finally:
-            responded.set()
-
-    def _on_direct_nav_result(
-        self,
-        goal_id,
-        result_future,
-    ):
-        try:
-            result = result_future.result()
-
-            self._mqtt_publish(
-                "goal/result",
-                {
-                    "goal_id": goal_id,
-                    "status": result.status,
-                },
-                qos=1,
-            )
-
-        except Exception as exc:
-            self.get_logger().warning(
-                f"[goal/result] could not fetch "
-                f"result for {goal_id}: {exc}"
-            )
 
     # =========================================================================
     # cmd/cancel_nav
@@ -1528,45 +1304,102 @@ class BridgeNode(Node):
         with self._nav_goal_lock:
             gh = self._active_nav_goal_handle
 
-        if gh is None:
+        if gh is not None:
+            # A NavigateThroughPoses goal handle is tracked (cmd/task's
+            # Hive-unavailable fallback) — cancel it directly.
+            self.get_logger().info(
+                f"[cmd/cancel_nav] cancelling tracked "
+                f"goal (request={request_id})"
+            )
+
+            try:
+                cancel_future = (
+                    gh.cancel_goal_async()
+                )
+            except Exception as exc:
+                self.get_logger().warning(
+                    f"[cmd/cancel_nav] cancel request failed: {exc}"
+                )
+
+                self._mqtt_publish(
+                    "cancel_nav/ack",
+                    {
+                        "request_id": request_id,
+                        "cancelled": False,
+                        "detail": str(exc),
+                    },
+                    qos=1,
+                )
+                return
+
+            def _on_cancel_done(fut):
+                try:
+                    response = fut.result()
+
+                    cancelled = (
+                        len(
+                            response.goals_canceling
+                        ) > 0
+                    )
+
+                except Exception as exc:
+                    self.get_logger().warning(
+                        "[cmd/cancel_nav] "
+                        f"cancel request failed: {exc}"
+                    )
+
+                    cancelled = False
+
+                self.get_logger().info(
+                    "[cmd/cancel_nav] "
+                    f"{'cancelled' if cancelled else 'not cancelled'}"
+                )
+
+                self._mqtt_publish(
+                    "cancel_nav/ack",
+                    {
+                        "request_id": request_id,
+                        "cancelled": cancelled,
+                    },
+                    qos=1,
+                )
+
+            cancel_future.add_done_callback(
+                _on_cancel_done
+            )
+            return
+
+        # No tracked action goal handle — cmd/goal dispatches straight to
+        # /goal_pose now, and Nav2's NavigateToPose navigator turns that
+        # into an action goal on itself, in-process, so there is no handle
+        # here to cancel. Reach that goal the other way: call
+        # NavigateToPose's own cancel service directly. An empty GoalInfo
+        # (zero UUID, zero stamp) cancels every goal currently active on
+        # that action server.
+        if not self._nav_to_pose_cancel_client.wait_for_service(
+            timeout_sec=_CANCEL_SERVICE_WAIT_S
+        ):
             self._mqtt_publish(
                 "cancel_nav/ack",
                 {
                     "request_id": request_id,
                     "cancelled": False,
-                    "detail": (
-                        "No active NavigateThroughPoses "
-                        "goal to cancel"
-                    ),
+                    "detail": "No active nav goal to cancel",
                 },
                 qos=1,
             )
             return
 
         self.get_logger().info(
-            f"[cmd/cancel_nav] cancelling active "
+            "[cmd/cancel_nav] cancelling active /navigate_to_pose "
             f"goal (request={request_id})"
         )
 
-        try:
-            cancel_future = (
-                gh.cancel_goal_async()
+        cancel_future = (
+            self._nav_to_pose_cancel_client.call_async(
+                CancelGoalSrv.Request()
             )
-        except Exception as exc:
-            self.get_logger().warning(
-                f"[cmd/cancel_nav] cancel request failed: {exc}"
-            )
-
-            self._mqtt_publish(
-                "cancel_nav/ack",
-                {
-                    "request_id": request_id,
-                    "cancelled": False,
-                    "detail": str(exc),
-                },
-                qos=1,
-            )
-            return
+        )
 
         def _on_cancel_done(fut):
             try:

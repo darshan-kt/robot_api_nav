@@ -203,11 +203,10 @@ class GatewayMqttClient:
 
     async def publish_goal(self, poses: list, timeout: float = config.GOAL_ACK_TIMEOUT_S) -> dict:
         """
-        Direct Nav2 dispatch via NavigateThroughPoses — publishes cmd/goal
-        and waits for the bridge's goal/ack (accept/reject), same pattern
-        as publish_task. Does NOT wait for the robot to finish driving the
-        route — see publish_cancel_nav to stop it early, and goal/result
-        (logged, not surfaced synchronously) for eventual completion.
+        Direct Nav2 dispatch via /goal_pose — publishes cmd/goal and waits
+        for the bridge's goal/ack (accept/reject), same pattern as
+        publish_task. Does NOT wait for the robot to finish driving — see
+        publish_cancel_nav to stop it early.
         """
         goal_id = str(uuid.uuid4())
         payload = {'goal_id': goal_id, 'poses': poses}

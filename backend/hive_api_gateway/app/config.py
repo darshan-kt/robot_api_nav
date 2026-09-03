@@ -78,17 +78,22 @@ MAP_RESOURCE_DIR = Path(__file__).resolve().parent.parent / "resource"
 
 # How long /tasks waits for the bridge's task/ack before giving up and
 # returning 504 to the client (the bridge itself already applies a 3s
-# wait_for_server timeout per nav stack, so 8s covers Hive AND the Nav2
-# fallback path with margin).
-TASK_ACK_TIMEOUT_S = 8.0
+# wait_for_server timeout per nav stack, so this covers Hive AND the Nav2
+# fallback path with margin). Widened past the old 8s so an AWS round trip
+# (gateway -> broker -> bridge -> broker -> gateway) has real headroom
+# instead of racing a tight local-network budget.
+TASK_ACK_TIMEOUT_S = 15.0
 
-# /nav_goal — same 3s wait_for_server margin reasoning as TASK_ACK_TIMEOUT_S,
-# just for the (usually already-up) NavigateThroughPoses server alone.
-GOAL_ACK_TIMEOUT_S = 6.0
+# /nav_goal — the bridge itself now just checks for a /goal_pose subscriber
+# and publishes (near-instant, no action handshake to wait on), so this
+# budget is really just the MQTT round trip. Widened from 6s so a slow/lossy
+# AWS hop doesn't 504 a goal the bridge already accepted.
+GOAL_ACK_TIMEOUT_S = 12.0
 
 # /cancel_nav — no wait_for_server involved, cancellation should be near
-# instant; short timeout mostly guards against a wedged MQTT link.
-CANCEL_ACK_TIMEOUT_S = 5.0
+# instant; widened from 5s for the same AWS round-trip margin as the above,
+# not because cancellation itself got slower.
+CANCEL_ACK_TIMEOUT_S = 10.0
 
 # /webrtc/offer relays the browser's SDP offer to hive_camera_bridge over
 # MQTT (cmd/webrtc_offer -> webrtc/answer), same as every other robot-bound

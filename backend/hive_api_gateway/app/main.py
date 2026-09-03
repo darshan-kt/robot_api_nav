@@ -157,19 +157,22 @@ async def create_task(payload: dict):
 @api_app.post("/nav_goal")
 async def nav_goal(payload: dict):
     """
-    Direct Nav2 dispatch — publishes cmd/goal; the bridge sends the whole
-    waypoint list as ONE NavigateThroughPoses action goal straight to
-    Nav2's /navigate_through_poses, bypassing the Hive behavior-tree layer
-    entirely (same "skip Hive/BT" pattern /api/velocity_ctrl already uses
-    for /cmd_vel):
+    Direct Nav2 dispatch — publishes cmd/goal; the bridge publishes the
+    route's final pose straight to /goal_pose, bypassing the Hive
+    behavior-tree layer entirely (same "skip Hive/BT" pattern
+    /api/velocity_ctrl already uses for /cmd_vel):
 
-        ros2 action send_goal /navigate_through_poses \\
-          nav2_msgs/action/NavigateThroughPoses "{poses: [...]}"
+        ros2 topic pub --once /goal_pose geometry_msgs/msg/PoseStamped \\
+          "{header: {frame_id: 'map'}, pose: {...}}"
+
+    Only the last entry in poses[] is used — /goal_pose carries a single
+    pose, so earlier entries (route shaping) are dropped; waypoint_count
+    in the response reflects that.
 
     Waits for the bridge's goal/ack (accept/reject) before responding —
-    NOT for the robot to finish driving the route. Use POST /cancel_nav to
-    stop it early. Use POST /tasks instead when you want BT-managed
-    retries, pause/cancel, and feedback.
+    NOT for the robot to finish driving. Use POST /cancel_nav to stop it
+    early. Use POST /tasks instead when you want BT-managed retries,
+    pause/cancel, and feedback.
 
     Accepts ONE of:
     1. pixel_waypoints — [{"col": 254, "row": 389, "yaw_deg": -3}, ...]
@@ -211,18 +214,12 @@ async def nav_goal(payload: dict):
     if not ack.get("accepted"):
         raise HTTPException(status_code=500, detail=ack.get("detail", "Goal rejected"))
 
-    # nav_mode says WHICH path on the robot actually took the goal:
-    # "navigate_through_poses" is the full-route action; "goal_pose_fallback"
-    # means the action handshake didn't answer and the bridge published the
-    # final waypoint to /goal_pose instead — one pose, not cancellable. The
-    # UI has to surface that difference, so pass it straight through along
-    # with the bridge's own explanation.
     return {
         "accepted":       True,
         "goal_id":        ack.get("goal_id"),
         "waypoint_count": ack.get("waypoint_count", len(poses)),
         "source":         source,
-        "nav_mode":       ack.get("nav_mode", "navigate_through_poses"),
+        "nav_mode":       ack.get("nav_mode", "goal_pose_direct"),
         "cancellable":    ack.get("cancellable", True),
         "detail":         ack.get("detail"),
     }
@@ -231,15 +228,16 @@ async def nav_goal(payload: dict):
 @api_app.post("/cancel_nav")
 async def cancel_nav():
     """
-    Cancels whatever NavigateThroughPoses goal is currently active on the
-    robot — equivalent to:
+    Cancels whatever goal is currently active on Nav2's NavigateToPose
+    action server — equivalent to:
 
-        ros2 action cancel /navigate_through_poses
+        ros2 action cancel /navigate_to_pose
 
-    Cancels regardless of whether the active goal came from POST /nav_goal
-    or POST /tasks' Nav2-fallback path (both dispatch through the same
-    action client on the bridge). Not an error if nothing was running —
-    check the response's "cancelled" field to tell the difference.
+    That covers goals dispatched by POST /nav_goal (which publishes to
+    /goal_pose; NavigateToPose picks it up and runs it in-process) as well
+    as POST /tasks' Nav2-fallback path (NavigateThroughPoses). Not an
+    error if nothing was running — check the response's "cancelled" field
+    to tell the difference.
 
     curl -X POST http://localhost:1717/cancel_nav
     """
