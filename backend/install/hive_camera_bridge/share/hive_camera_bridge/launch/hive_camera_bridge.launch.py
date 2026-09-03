@@ -1,1 +1,0 @@
-/home/charlie/ros2_ws/build/hive_camera_bridge/launch/hive_camera_bridge.launch.py

@@ -1,1 +1,0 @@
-/home/charlie/ros2_ws/build/hive_interfaces/ament_cmake_core/hive_interfacesConfig-version.cmake
