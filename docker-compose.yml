@@ -198,9 +198,9 @@ services:
       # (see turtlebot_mcp_ros2/docker-compose.yml). Signaling on :8766 is
       # reachable at the host's own IP because of network_mode: host, same
       # as mqtt-broker's published 1883 — no separate 'ports:' entry needed.
-      - CAMERA_TOPIC=/image_raw
+      - CAMERA_TOPIC=/camera/image_raw
       - CAMERA_SIGNALING_PORT=8766
-      - CAMERA_FPS=10
+      - CAMERA_FPS=15
 
     volumes:
       # ROS 2 package sources
