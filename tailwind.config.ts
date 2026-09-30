@@ -4,18 +4,30 @@ const config: Config = {
     content: ['./index.html', './src/**/*.{ts,tsx}'],
     theme: {
         extend: {
+            // Every colour resolves through a CSS custom property holding a
+            // bare "R G B" triple, so a theme swaps palettes by redefining the
+            // variables on <html data-theme> and Tailwind's opacity modifiers
+            // (bg-card/50, border-live/20) keep working. Values live in
+            // src/index.css; the dark theme there is byte-identical to the
+            // hexes this block used before, so the default look is unchanged.
             colors: {
-                background: '#0a1b20',   // deep ocean teal
-                surface: '#102830',
-                card: '#132e38',
-                border: '#2b4d58',
-                accent: '#00e5a0',
-                info: '#38bdf8',
-                warning: '#ffb020',
-                danger: '#ff4d6a',
-                text: '#e8ecf4',
-                textMuted: '#8892a8',
-                textDim: '#5a6580',
+                background: 'rgb(var(--c-background) / <alpha-value>)',
+                surface: 'rgb(var(--c-surface) / <alpha-value>)',
+                card: 'rgb(var(--c-card) / <alpha-value>)',
+                border: 'rgb(var(--c-border) / <alpha-value>)',
+                accent: 'rgb(var(--c-accent) / <alpha-value>)',
+                info: 'rgb(var(--c-info) / <alpha-value>)',
+                warning: 'rgb(var(--c-warning) / <alpha-value>)',
+                danger: 'rgb(var(--c-danger) / <alpha-value>)',
+                text: 'rgb(var(--c-text) / <alpha-value>)',
+                textMuted: 'rgb(var(--c-text-muted) / <alpha-value>)',
+                textDim: 'rgb(var(--c-text-dim) / <alpha-value>)',
+
+                // Tints and insets. Was literal white/black at low alpha, which
+                // inverts wrongly the moment the canvas goes light — this flips
+                // with the theme so `bg-overlay/5` is always a subtle lift of
+                // the surface beneath it.
+                overlay: 'rgb(var(--c-overlay) / <alpha-value>)',
 
                 // ── Live-state semantics ──────────────────────────────────
                 // Gap: the palette above has no token for "this telemetry
@@ -24,21 +36,49 @@ const config: Config = {
                 // occurrences repo-wide). Values are byte-identical to the
                 // Tailwind palette entries already rendering today, so
                 // adopting them is a rename, not a restyle.
-                live: '#34d399',          // was emerald-400 — link up, data flowing
-                liveStrong: '#10b981',    // was emerald-500 — active/pressed affordance
-                fault: '#fb7185',         // was rose-400 — link down, offline
-                faultStrong: '#f43f5e',   // was rose-500 — destructive / E-Stop
+                live: 'rgb(var(--c-live) / <alpha-value>)',                 // link up, data flowing
+                liveStrong: 'rgb(var(--c-live-strong) / <alpha-value>)',   // active/pressed affordance
+                fault: 'rgb(var(--c-fault) / <alpha-value>)',              // link down, offline
+                faultStrong: 'rgb(var(--c-fault-strong) / <alpha-value>)', // destructive / E-Stop
                 // White on faultStrong measures 3.67:1 — under 4.5 for the
                 // 14px label on the one destructive control in the console.
-                // This is the darkest step that clears it (4.70:1).
-                faultDeep: '#e11d48',
-                stream: '#c084fc',        // was purple-400 — media + feed-toggle chrome
-                streamStrong: '#a855f7',  // was purple-500
+                // Each theme supplies the darkest step that clears 4.5:1.
+                faultDeep: 'rgb(var(--c-fault-deep) / <alpha-value>)',
+                stream: 'rgb(var(--c-stream) / <alpha-value>)',            // media + feed-toggle chrome
+                streamStrong: 'rgb(var(--c-stream-strong) / <alpha-value>)',
 
                 // Gap: focus was drawn in emerald-400, which sits on top of
                 // emerald-filled active controls at ~1.1:1. Needs to be a hue
-                // no state token uses. sky-300 on #0a1b20 measures 11.2:1.
-                focus: '#7dd3fc',
+                // no state token uses, in every theme.
+                focus: 'rgb(var(--c-focus) / <alpha-value>)',
+
+                // A camera viewport and a radar dial are media, not page
+                // surface — they stay dark in every theme so returns and video
+                // stay readable, and their chrome must not follow the canvas
+                // or it inverts to black-on-black. Theme-invariant by design;
+                // see the media block in src/index.css.
+                media: {
+                    bg: 'rgb(var(--c-media-bg) / <alpha-value>)',
+                    fg: 'rgb(var(--c-media-fg) / <alpha-value>)',
+                    live: 'rgb(var(--c-media-live) / <alpha-value>)',
+                    stream: 'rgb(var(--c-media-stream) / <alpha-value>)',
+                },
+
+                // Categorical ramp for Card/Badge, whose `theme`/`type` props
+                // are public API across the app (including dynamic values like
+                // `badge.type`). Keeping all seven keys means no caller
+                // changes; routing them through variables means they stop
+                // being invisible on a light canvas, where emerald-400 sits at
+                // roughly 1.8:1.
+                hue: {
+                    emerald: 'rgb(var(--c-hue-emerald) / <alpha-value>)',
+                    blue: 'rgb(var(--c-hue-blue) / <alpha-value>)',
+                    amber: 'rgb(var(--c-hue-amber) / <alpha-value>)',
+                    rose: 'rgb(var(--c-hue-rose) / <alpha-value>)',
+                    purple: 'rgb(var(--c-hue-purple) / <alpha-value>)',
+                    pink: 'rgb(var(--c-hue-pink) / <alpha-value>)',
+                    teal: 'rgb(var(--c-hue-teal) / <alpha-value>)',
+                },
             },
             fontFamily: {
                 mono: ['"JetBrains Mono"', 'monospace'],

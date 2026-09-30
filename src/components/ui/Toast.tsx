@@ -46,15 +46,15 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: () => void }) 
     }, [onRemove]);
 
     const icons = {
-        success: <CheckCircle2 className="w-5 h-5 text-emerald-400" />,
-        error: <AlertCircle className="w-5 h-5 text-rose-400" />,
-        info: <Info className="w-5 h-5 text-blue-400" />,
+        success: <CheckCircle2 className="w-5 h-5 text-live" />,
+        error: <AlertCircle className="w-5 h-5 text-fault" />,
+        info: <Info className="w-5 h-5 text-info" />,
     };
 
     const borders = {
-        success: 'border-emerald-400/20',
-        error: 'border-rose-400/20',
-        info: 'border-blue-400/20',
+        success: 'border-live/20',
+        error: 'border-fault/20',
+        info: 'border-info/20',
     };
 
     return (

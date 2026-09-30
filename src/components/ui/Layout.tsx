@@ -2,39 +2,41 @@ import React from 'react';
 
 export function Skeleton({ className }: { className?: string }) {
     return (
-        <div className={`animate-pulse bg-white/5 rounded-lg ${className}`} />
+        <div className={`animate-pulse bg-overlay/5 rounded-lg ${className}`} />
     );
 }
 
 export function Card({ children, className, hover = true, theme = 'emerald', onClick }: { children: React.ReactNode; className?: string; hover?: boolean; theme?: 'emerald' | 'blue' | 'amber' | 'rose' | 'purple' | 'pink' | 'teal'; onClick?: () => void }) {
+    // The 400->600 ramp became one hue at two alphas: a second variable per
+    // hue only to darken a 3px bar is not worth the palette surface.
     const gradients = {
-        emerald: 'from-emerald-400 to-emerald-600',
-        blue: 'from-blue-400 to-blue-600',
-        amber: 'from-amber-400 to-amber-600',
-        rose: 'from-rose-400 to-rose-600',
-        purple: 'from-purple-400 to-purple-600',
-        pink: 'from-pink-400 to-pink-600',
-        teal: 'from-teal-400 to-teal-600',
+        emerald: 'from-hue-emerald/70 to-hue-emerald',
+        blue: 'from-hue-blue/70 to-hue-blue',
+        amber: 'from-hue-amber/70 to-hue-amber',
+        rose: 'from-hue-rose/70 to-hue-rose',
+        purple: 'from-hue-purple/70 to-hue-purple',
+        pink: 'from-hue-pink/70 to-hue-pink',
+        teal: 'from-hue-teal/70 to-hue-teal',
     };
 
     const borderHovers = {
-        emerald: 'hover:border-emerald-400/50',
-        blue: 'hover:border-blue-400/50',
-        amber: 'hover:border-amber-400/50',
-        rose: 'hover:border-rose-400/50',
-        purple: 'hover:border-purple-400/50',
-        pink: 'hover:border-pink-400/50',
-        teal: 'hover:border-teal-400/50',
+        emerald: 'hover:border-hue-emerald/50',
+        blue: 'hover:border-hue-blue/50',
+        amber: 'hover:border-hue-amber/50',
+        rose: 'hover:border-hue-rose/50',
+        purple: 'hover:border-hue-purple/50',
+        pink: 'hover:border-hue-pink/50',
+        teal: 'hover:border-hue-teal/50',
     };
 
     const shadows = {
-        emerald: 'hover:shadow-[0_8px_30px_rgba(52,211,153,0.15)]',
-        blue: 'hover:shadow-[0_8px_30px_rgba(96,165,250,0.15)]',
-        amber: 'hover:shadow-[0_8px_30px_rgba(251,191,36,0.15)]',
-        rose: 'hover:shadow-[0_8px_30px_rgba(244,63,94,0.15)]',
-        purple: 'hover:shadow-[0_8px_30px_rgba(167,139,250,0.15)]',
-        pink: 'hover:shadow-[0_8px_30px_rgba(244,114,182,0.15)]',
-        teal: 'hover:shadow-[0_8px_30px_rgba(20,184,166,0.15)]',
+        emerald: 'hover:shadow-lg hover:shadow-hue-emerald/20',
+        blue: 'hover:shadow-lg hover:shadow-hue-blue/20',
+        amber: 'hover:shadow-lg hover:shadow-hue-amber/20',
+        rose: 'hover:shadow-lg hover:shadow-hue-rose/20',
+        purple: 'hover:shadow-lg hover:shadow-hue-purple/20',
+        pink: 'hover:shadow-lg hover:shadow-hue-pink/20',
+        teal: 'hover:shadow-lg hover:shadow-hue-teal/20',
     };
 
     return (
@@ -53,14 +55,14 @@ export function Card({ children, className, hover = true, theme = 'emerald', onC
 
 export function Badge({ children, type = 'emerald', className }: { children: React.ReactNode; type?: 'emerald' | 'blue' | 'amber' | 'rose' | 'purple' | 'pink' | 'teal' | 'muted'; className?: string }) {
     const styles = {
-        emerald: 'bg-emerald-400/10 text-emerald-400 border-emerald-400/20',
-        blue: 'bg-blue-400/10 text-blue-400 border-blue-400/20',
-        amber: 'bg-amber-400/10 text-amber-400 border-amber-400/20',
-        rose: 'bg-rose-400/10 text-rose-400 border-rose-400/20',
-        purple: 'bg-purple-400/10 text-purple-400 border-purple-400/20',
-        pink: 'bg-pink-400/10 text-pink-400 border-pink-400/20',
-        teal: 'bg-teal-400/10 text-teal-400 border-teal-400/20',
-        muted: 'bg-white/5 text-textMuted border-border/50',
+        emerald: 'bg-hue-emerald/10 text-hue-emerald border-hue-emerald/20',
+        blue: 'bg-hue-blue/10 text-hue-blue border-hue-blue/20',
+        amber: 'bg-hue-amber/10 text-hue-amber border-hue-amber/20',
+        rose: 'bg-hue-rose/10 text-hue-rose border-hue-rose/20',
+        purple: 'bg-hue-purple/10 text-hue-purple border-hue-purple/20',
+        pink: 'bg-hue-pink/10 text-hue-pink border-hue-pink/20',
+        teal: 'bg-hue-teal/10 text-hue-teal border-hue-teal/20',
+        muted: 'bg-overlay/5 text-textMuted border-border/50',
     };
 
     return (
@@ -92,11 +94,11 @@ export function Button({
     title?: string;
 }) {
     const variants = {
-        primary: 'bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-500 shadow-lg shadow-emerald-500/20',
-        secondary: 'bg-blue-500 hover:bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-500/20',
-        outline: 'bg-transparent border-border hover:border-text hover:bg-white/5 text-text',
-        ghost: 'bg-transparent border-transparent text-textMuted hover:text-text hover:bg-white/5',
-        danger: 'bg-rose-500 hover:bg-rose-600 text-white border-rose-500 shadow-lg shadow-rose-500/20',
+        primary: 'bg-liveStrong hover:bg-liveStrong/90 text-white border-liveStrong shadow-lg shadow-liveStrong/20',
+        secondary: 'bg-info hover:bg-info/90 text-white border-info shadow-lg shadow-info/20',
+        outline: 'bg-transparent border-border hover:border-text hover:bg-overlay/5 text-text',
+        ghost: 'bg-transparent border-transparent text-textMuted hover:text-text hover:bg-overlay/5',
+        danger: 'bg-faultStrong hover:bg-faultStrong/90 text-white border-faultStrong shadow-lg shadow-faultStrong/20',
     };
 
     const sizes = {
@@ -114,7 +116,7 @@ export function Button({
             className={`
         inline-flex items-center justify-center gap-2 font-medium rounded-xl border transition-all duration-200
         disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]
-        focus:outline-none focus:ring-2 focus:ring-emerald-400/50
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-focus
         ${variants[variant]} ${sizes[size]} ${className}
       `}
         >
@@ -127,7 +129,7 @@ export function Button({
 export function EmptyState({ icon: Icon, title, description, action }: { icon: any; title: string; description: string; action?: React.ReactNode }) {
     return (
         <div className="flex flex-col items-center justify-center py-12 px-6 text-center animate-fade-in">
-            <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4 border border-border/50">
+            <div className="w-16 h-16 rounded-2xl bg-overlay/5 flex items-center justify-center mb-4 border border-border/50">
                 <Icon className="w-8 h-8 text-textMuted opacity-50" />
             </div>
             <h3 className="text-lg font-semibold text-text mb-2">{title}</h3>

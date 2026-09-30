@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { localDb } from '../../lib/localDb';
 import { useEffect, useState } from 'react';
 import { GATEWAY_URL } from '../../lib/config';
+import { ThemeSwitcher } from '../ui/ThemeSwitcher';
 
 interface HeaderProps {
     showBack?: boolean;
@@ -129,6 +130,7 @@ export function Header({ showBack, backTo = '/store', onBack, title, icon: Icon,
                                 {robotAlive ? 'Connected' : 'Not Connected'}
                             </div>
                         </div>
+                        <ThemeSwitcher />
                         <button
                             onClick={() => signOut()}
                             className="tap-target p-2 rounded-lg text-textMuted hover:text-fault hover:bg-fault/10 transition-colors duration-base ease-standard flex items-center gap-2 group shrink-0"

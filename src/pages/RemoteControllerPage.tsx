@@ -630,7 +630,7 @@ export function RemoteControllerPage() {
                                         className={`tap-target flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-meta font-mono font-bold tracking-wide whitespace-nowrap transition-colors duration-base ease-standard cursor-pointer ${
                                             scanUpdateOn
                                                 ? 'bg-streamStrong/20 border-streamStrong/50 text-stream'
-                                                : 'bg-white/5 border-border text-text hover:border-streamStrong/40 hover:text-stream'
+                                                : 'bg-overlay/5 border-border text-text hover:border-streamStrong/40 hover:text-stream'
                                         }`}
                                     >
                                         <Radar className="w-3 h-3 shrink-0" />
@@ -649,7 +649,7 @@ export function RemoteControllerPage() {
                             </div>
 
                             {/* Radar sweeping feed */}
-                            <div className="relative w-full aspect-square rounded-full border border-liveStrong/20 bg-background/60 shadow-inner flex items-center justify-center p-2">
+                            <div className="relative w-full aspect-square rounded-full border border-media-live/20 bg-media-bg shadow-inner flex items-center justify-center p-2">
                                 <canvas
                                     ref={radarCanvasRef}
                                     width={400}
@@ -662,10 +662,10 @@ export function RemoteControllerPage() {
                                             : 'LIDAR scan dial — no scan data received'
                                     }
                                 />
-                                <div className="absolute bottom-6 left-6 font-mono text-meta text-live bg-background/80 px-2.5 py-1.5 rounded-lg border border-liveStrong/20">
+                                <div className="absolute bottom-6 left-6 font-mono text-meta text-media-live bg-media-bg/80 px-2.5 py-1.5 rounded-lg border border-media-live/20">
                                     {scan ? `${scan.ranges.filter(r => r !== null).length}/${scan.ranges.length} BEAMS` : 'SCAN: — '}
                                 </div>
-                                <div className="absolute bottom-6 right-6 font-mono text-meta text-live bg-background/80 px-2.5 py-1.5 rounded-lg border border-liveStrong/20">
+                                <div className="absolute bottom-6 right-6 font-mono text-meta text-media-live bg-media-bg/80 px-2.5 py-1.5 rounded-lg border border-media-live/20">
                                     {scan ? `RANGE: ${scan.range_max.toFixed(1)}m` : 'RANGE: —'}
                                 </div>
                             </div>
@@ -697,7 +697,7 @@ export function RemoteControllerPage() {
                                         className={`tap-target flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-meta font-mono font-bold tracking-wide whitespace-nowrap transition-colors duration-base ease-standard cursor-pointer ${
                                             cameraOn
                                                 ? 'bg-streamStrong/20 border-streamStrong/50 text-stream'
-                                                : 'bg-white/5 border-border text-text hover:border-streamStrong/40 hover:text-stream'
+                                                : 'bg-overlay/5 border-border text-text hover:border-streamStrong/40 hover:text-stream'
                                         }`}
                                     >
                                         {cameraOn ? <Video className="w-3 h-3 shrink-0" /> : <VideoOff className="w-3 h-3 shrink-0" />}
@@ -716,7 +716,7 @@ export function RemoteControllerPage() {
                             </div>
 
                             <div className="relative w-full aspect-square flex items-center justify-center">
-                                <div className="relative w-full aspect-[4/3] rounded-xl border border-streamStrong/20 bg-black shadow-inner overflow-hidden flex items-center justify-center">
+                                <div className="relative w-full aspect-[4/3] rounded-xl border border-media-stream/20 bg-media-bg shadow-inner overflow-hidden flex items-center justify-center">
                                     <video
                                         ref={videoRef}
                                         autoPlay
@@ -728,18 +728,18 @@ export function RemoteControllerPage() {
                                     {!cameraConnected && (
                                         <div
                                             role="status"
-                                            className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70"
+                                            className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-media-bg/80"
                                         >
-                                            <VideoOff className="w-7 h-7 text-textMuted" />
-                                            <span className="font-mono text-meta text-textMuted uppercase tracking-widest px-4 text-center">
+                                            <VideoOff className="w-7 h-7 text-media-fg/60" />
+                                            <span className="font-mono text-meta text-media-fg/80 uppercase tracking-widest px-4 text-center">
                                                 {!cameraOn ? 'Feed Off' : cameraConnecting ? 'Negotiating…' : 'No Signal'}
                                             </span>
                                         </div>
                                     )}
-                                    <div className="absolute bottom-3 left-3 font-mono text-meta text-stream bg-background/80 px-2.5 py-1.5 rounded-lg border border-streamStrong/20">
+                                    <div className="absolute bottom-3 left-3 font-mono text-meta text-media-stream bg-media-bg/80 px-2.5 py-1.5 rounded-lg border border-media-stream/20">
                                         RGB · 320×240
                                     </div>
-                                    <div className="absolute bottom-3 right-3 font-mono text-meta text-stream bg-background/80 px-2.5 py-1.5 rounded-lg border border-streamStrong/20">
+                                    <div className="absolute bottom-3 right-3 font-mono text-meta text-media-stream bg-media-bg/80 px-2.5 py-1.5 rounded-lg border border-media-stream/20">
                                         WEBRTC
                                     </div>
                                 </div>
@@ -751,7 +751,7 @@ export function RemoteControllerPage() {
                         whole, not to either feed above */}
                     <Card hover={false} className="p-6">
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="bg-background/50 px-4 py-3 rounded-xl border border-white/5 text-center">
+                            <div className="bg-background/50 px-4 py-3 rounded-xl border border-overlay/5 text-center">
                                 <span className="text-meta font-mono text-textMuted uppercase">Position</span>
                                 <p className="text-body sm:text-readout font-mono font-bold text-text mt-1 tabular-nums whitespace-nowrap">
                                     {connected && robotState
@@ -759,18 +759,18 @@ export function RemoteControllerPage() {
                                         : '—, —'}
                                 </p>
                             </div>
-                            <div className="bg-background/50 px-4 py-3 rounded-xl border border-white/5 text-center">
+                            <div className="bg-background/50 px-4 py-3 rounded-xl border border-overlay/5 text-center">
                                 <span className="text-meta font-mono text-textMuted uppercase">Heading</span>
                                 <p className="text-body sm:text-readout font-mono font-bold text-text mt-1 tabular-nums whitespace-nowrap">
                                     {connected && robotState ? `${(robotState.theta * 180 / Math.PI).toFixed(0)}°` : '—'}
                                 </p>
                                 {latency !== null && <Badge type="blue" className="mt-1.5">{latency} ms</Badge>}
                             </div>
-                            <div className="bg-background/50 px-4 py-3 rounded-xl border border-white/5 text-center">
+                            <div className="bg-background/50 px-4 py-3 rounded-xl border border-overlay/5 text-center">
                                 <span className="text-meta font-mono text-textMuted uppercase">Linear Velocity</span>
                                 <p className="text-body sm:text-readout font-mono font-bold text-live mt-0.5 tabular-nums whitespace-nowrap">{linearVel.toFixed(2)} m/s</p>
                             </div>
-                            <div className="bg-background/50 px-4 py-3 rounded-xl border border-white/5 text-center">
+                            <div className="bg-background/50 px-4 py-3 rounded-xl border border-overlay/5 text-center">
                                 <span className="text-meta font-mono text-textMuted uppercase">Angular Velocity</span>
                                 <p className="text-body sm:text-readout font-mono font-bold text-live mt-0.5 tabular-nums whitespace-nowrap">{angularVel.toFixed(2)} rad/s</p>
                             </div>
@@ -837,7 +837,7 @@ export function RemoteControllerPage() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-stack md:max-w-none items-center justify-center">
                             {/* Visual WASD Keyboard */}
-                            <div className="flex flex-col items-center justify-center bg-background/40 p-4 rounded-2xl border border-white/5">
+                            <div className="flex flex-col items-center justify-center bg-background/40 p-4 rounded-2xl border border-overlay/5">
                                 <span className="text-meta font-mono text-textMuted uppercase mb-4">Keyboard teleop</span>
                                 
                                 <div className="space-y-2">
@@ -855,17 +855,17 @@ export function RemoteControllerPage() {
                             </div>
 
                             {/* Virtual Joystick */}
-                            <div className="flex flex-col items-center justify-center bg-background/40 p-4 rounded-2xl border border-white/5">
+                            <div className="flex flex-col items-center justify-center bg-background/40 p-4 rounded-2xl border border-overlay/5">
                                 <span className="text-meta font-mono text-textMuted uppercase mb-4">Touch Joystick</span>
 
                                 <div
                                     ref={joystickContainerRef}
                                     onMouseDown={handleJoystickStart}
                                     onTouchStart={handleJoystickStart}
-                                    className="w-32 h-32 rounded-full bg-surface/40 border border-white/10 backdrop-blur-md relative flex items-center justify-center cursor-grab active:cursor-grabbing shadow-inner"
+                                    className="w-32 h-32 rounded-full bg-surface/40 border border-overlay/10 backdrop-blur-md relative flex items-center justify-center cursor-grab active:cursor-grabbing shadow-inner"
                                 >
                                     {/* Inner concentric ring */}
-                                    <div className="w-16 h-16 rounded-full border border-white/5 flex items-center justify-center" />
+                                    <div className="w-16 h-16 rounded-full border border-overlay/5 flex items-center justify-center" />
 
                                     {/* Draggable Knob */}
                                     <div
@@ -875,7 +875,7 @@ export function RemoteControllerPage() {
                                         }}
                                         className="w-tap h-tap rounded-full bg-gradient-to-br from-live to-liveStrong border border-live flex items-center justify-center absolute shadow-lg shadow-liveStrong/40 transition-transform duration-fast ease-standard pointer-events-none"
                                     >
-                                        <div className="w-3.5 h-3.5 rounded-full bg-white/20" />
+                                        <div className="w-3.5 h-3.5 rounded-full bg-overlay/20" />
                                     </div>
                                 </div>
                             </div>
@@ -900,7 +900,7 @@ export function RemoteControllerPage() {
                                     aria-valuemin={0}
                                     aria-valuemax={100}
                                     aria-valuetext={`${liftLevel} percent extended`}
-                                    className="w-full h-1.5 bg-background/60 rounded-full overflow-hidden border border-white/5"
+                                    className="w-full h-1.5 bg-background/60 rounded-full overflow-hidden border border-overlay/5"
                                 >
                                     <div className="h-full bg-streamStrong transition-all duration-slow ease-standard" style={{ width: `${liftLevel}%` }} />
                                 </div>

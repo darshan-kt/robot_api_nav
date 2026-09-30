@@ -4,6 +4,128 @@
 
 @layer base {
 
+  /* ══ Themes ═══════════════════════════════════════════════════════════
+     Each palette is a set of bare "R G B" triples consumed by
+     tailwind.config.ts as rgb(var(--c-x) / <alpha-value>). Selection is an
+     explicit `data-theme` on <html>, written by src/lib/theme.ts; "auto"
+     resolves to dark or light from prefers-color-scheme before first paint
+     (see the inline script in index.html) so there is no flash.
+
+     Contrast floor for every theme: body text >= 7:1 on its own canvas,
+     muted text >= 4.5:1, and white on fault-deep >= 4.5:1 for the E-Stop. */
+
+  /* ── Media surfaces (identical in every theme) ───────────────────────
+     A camera viewport and a radar dial are not page surfaces; inverting them
+     with the canvas would put light-theme text on a black video letterbox.
+     These four hold steady so that chrome stays legible over media. */
+  :root {
+    --c-media-bg: 6 18 26;
+    --c-media-fg: 232 236 244;
+    --c-media-live: 52 211 153;
+    --c-media-stream: 192 132 252;
+  }
+
+  /* ── Dark (default) — unchanged from the pre-theme palette ──────────── */
+  :root,
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+    --c-background: 10 27 32;
+    --c-surface: 16 40 48;
+    --c-card: 19 46 56;
+    --c-border: 43 77 88;
+    --c-accent: 0 229 160;
+    --c-info: 56 189 248;
+    --c-warning: 255 176 32;
+    --c-danger: 255 77 106;
+    --c-text: 232 236 244;
+    --c-text-muted: 136 146 168;
+    --c-text-dim: 90 101 128;
+    --c-overlay: 255 255 255;
+    --c-live: 52 211 153;
+    --c-live-strong: 16 185 129;
+    --c-fault: 251 113 133;
+    --c-fault-strong: 244 63 94;
+    --c-fault-deep: 225 29 72;
+    --c-stream: 192 132 252;
+    --c-stream-strong: 168 85 247;
+    --c-focus: 125 211 252;
+    --c-hue-emerald: 52 211 153;
+    --c-hue-blue: 96 165 250;
+    --c-hue-amber: 251 191 36;
+    --c-hue-rose: 251 113 133;
+    --c-hue-purple: 192 132 252;
+    --c-hue-pink: 244 114 182;
+    --c-hue-teal: 45 212 191;
+  }
+
+  /* ── Light ──────────────────────────────────────────────────────────
+     Accents darken substantially: emerald-400 on a white card is ~1.8:1.
+     These are the 600/700 steps, which clear 4.5:1 on the light canvas. */
+  :root[data-theme='light'] {
+    color-scheme: light;
+    --c-background: 244 246 249;
+    --c-surface: 255 255 255;
+    --c-card: 255 255 255;
+    --c-border: 199 210 221;
+    --c-accent: 0 122 88;
+    --c-info: 2 118 178;
+    --c-warning: 146 94 0;
+    --c-danger: 190 18 60;
+    --c-text: 15 28 36;
+    --c-text-muted: 74 90 104;
+    --c-text-dim: 100 116 130;
+    --c-overlay: 15 28 36;
+    --c-live: 6 95 70;
+    --c-live-strong: 4 108 78;
+    --c-fault: 159 18 57;
+    --c-fault-strong: 190 18 60;
+    --c-fault-deep: 136 19 55;
+    --c-stream: 107 33 168;
+    --c-stream-strong: 107 33 168;
+    --c-focus: 3 105 161;
+    /* 700 steps: the 400s used on dark are ~1.8:1 on a white card. */
+    --c-hue-emerald: 4 120 87;
+    --c-hue-blue: 29 78 216;
+    --c-hue-amber: 180 83 9;
+    --c-hue-rose: 190 18 60;
+    --c-hue-purple: 126 34 206;
+    --c-hue-pink: 190 24 93;
+    --c-hue-teal: 15 118 110;
+    --aurora-opacity: 0.3;
+  }
+
+  /* ── Blue — a cooler dark, same contrast discipline as Dark ─────────── */
+  :root[data-theme='blue'] {
+    color-scheme: dark;
+    --c-background: 9 20 40;
+    --c-surface: 15 31 58;
+    --c-card: 19 39 71;
+    --c-border: 42 71 114;
+    --c-accent: 56 189 248;
+    --c-info: 125 211 252;
+    --c-warning: 252 191 73;
+    --c-danger: 251 113 133;
+    --c-text: 230 238 252;
+    --c-text-muted: 141 158 187;
+    --c-text-dim: 100 116 145;
+    --c-overlay: 255 255 255;
+    --c-live: 45 212 191;
+    --c-live-strong: 20 184 166;
+    --c-fault: 251 113 133;
+    --c-fault-strong: 244 63 94;
+    --c-fault-deep: 225 29 72;
+    --c-stream: 129 140 248;
+    --c-stream-strong: 99 102 241;
+    --c-focus: 147 197 253;
+    --c-hue-emerald: 45 212 191;
+    --c-hue-blue: 125 211 252;
+    --c-hue-amber: 252 191 73;
+    --c-hue-rose: 251 113 133;
+    --c-hue-purple: 129 140 248;
+    --c-hue-pink: 244 114 182;
+    --c-hue-teal: 94 234 212;
+  }
+
   *,
   *::before,
   *::after {
@@ -15,7 +137,7 @@
   }
 
   body {
-    @apply bg-background text-text selection:bg-emerald-500/30 overflow-x-hidden;
+    @apply bg-background text-text selection:bg-accent/30 overflow-x-hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -35,6 +157,9 @@
       radial-gradient(700px 500px at 55% 40%, rgba(139, 92, 246, 0.07), transparent 65%);
     animation: aurora-drift 36s ease-in-out infinite alternate;
     will-change: filter, transform;
+    /* Tuned down rather than switched off on a light canvas: at full strength
+       these teal/violet blooms turn a near-white page muddy. */
+    opacity: var(--aurora-opacity, 1);
   }
 
   @keyframes aurora-drift {
@@ -410,5 +535,5 @@
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2b4d58 #0a1b20;
+  scrollbar-color: rgb(var(--c-border)) rgb(var(--c-background));
 }

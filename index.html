@@ -5,6 +5,23 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>appstore</title>
+    <!-- Applies the saved theme before first paint, so the page never flashes
+         the default palette on the way to the chosen one. Mirrors
+         THEME_BOOTSTRAP in src/lib/theme.ts — change both together. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('robostore-theme');
+          if (t !== 'dark' && t !== 'light' && t !== 'blue' && t !== 'auto') t = 'auto';
+          var r = t === 'auto'
+            ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+            : t;
+          document.documentElement.setAttribute('data-theme', r);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
