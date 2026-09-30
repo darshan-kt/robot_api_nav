@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, ArrowRight, OctagonX, Smartphone, Route, CircuitBoard, Eye } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ArrowRight } from 'lucide-react';
 import { Header } from '../components/layout/Header';
-import { Badge, Skeleton } from '../components/ui/Layout';
+import { Skeleton } from '../components/ui/Layout';
+import { AppTileGrid } from '../components/layout/SectionDeck';
+import { SECTIONS, appCount } from '../lib/appCatalog';
 
 export function AppStorePage() {
-    const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
     const [clock, setClock] = useState(new Date());
 
@@ -19,88 +20,6 @@ export function AppStorePage() {
         const id = setInterval(() => setClock(new Date()), 1000);
         return () => clearInterval(id);
     }, []);
-
-    // RGB triplets drive the per-card spotlight / beam / shadow via --glow
-    const glows: Record<string, string> = {
-        emerald: '52 211 153',
-        rose:    '244 63 94',
-        purple:  '167 139 250',
-        amber:   '251 191 36',
-        teal:    '45 212 191',
-        blue:    '96 165 250',
-    };
-
-    const themeStyles: Record<string, string> = {
-        emerald: 'bg-emerald-400/10 text-emerald-400 ring-emerald-400/20',
-        rose:    'bg-rose-400/10 text-rose-400 ring-rose-400/20',
-        purple:  'bg-purple-400/10 text-purple-400 ring-purple-400/20',
-        amber:   'bg-amber-400/10 text-amber-400 ring-amber-400/20',
-        teal:    'bg-teal-400/10 text-teal-400 ring-teal-400/20',
-        blue:    'bg-blue-400/10 text-blue-400 ring-blue-400/20',
-    };
-
-    const primaryApps = [
-        {
-            id: 'dashboard',
-            title: 'Dashboard',
-            icon: LayoutDashboard,
-            theme: 'emerald' as const,
-            tag: 'Core',
-            description: 'Robot info, sensors, configuration & system monitoring',
-            version: 'v3.1.2',
-            path: '/dashboard'
-        },
-        {
-            id: 'emergency-stop',
-            title: 'Emergency Stop',
-            icon: OctagonX,
-            theme: 'rose' as const,
-            tag: 'Safety',
-            description: 'Instantly halt all robot operations with global software E-Stop',
-            version: 'v1.0.0',
-            path: '/emergency-stop'
-        },
-        {
-            id: 'remote-controller',
-            title: 'Remote Controller',
-            icon: Smartphone,
-            theme: 'purple' as const,
-            tag: 'Manual',
-            description: 'Manual teleop controls with keyboard steering and radar HUD',
-            version: 'v1.0.0',
-            path: '/remote-controller'
-        },
-        {
-            id: 'simple-route-planner',
-            title: 'Simple Route Planner',
-            icon: Route,
-            theme: 'amber' as const,
-            tag: 'Planning',
-            description: 'Design and edit robot navigation routes on a map canvas',
-            version: 'v1.0.0',
-            path: '/simple-route-planner'
-        },
-        {
-            id: 'hardware-sensors-lab',
-            title: 'Hardware & Sensors Lab',
-            icon: CircuitBoard,
-            theme: 'teal' as const,
-            tag: 'Lab',
-            description: 'Tune RPLIDAR A2 and Orbbec Astra Pro parameters, read the verified setup steps, and watch simulated live data respond in real time',
-            version: 'v1.0.0',
-            path: '/hardware-sensors-lab'
-        },
-        {
-            id: 'visual-tracking-lab',
-            title: 'Visual Tracking Lab',
-            icon: Eye,
-            theme: 'blue' as const,
-            tag: 'Lab',
-            description: 'Calibrate HSV color thresholds live, then watch a real, hand-rolled vision pipeline track a target and compute steering — including the STOP-not-search safety behavior when the target is lost',
-            version: 'v1.0.0',
-            path: '/visual-tracking-lab'
-        },
-    ];
 
     // Decorative system ticker — purely visual flavour
     const tickerItems = [
@@ -123,21 +42,6 @@ export function AppStorePage() {
         { left: '48%', top: '50%', dur: '7.2s', delay: '1.9s' },
     ];
 
-    // 3D tilt + cursor spotlight — writes CSS vars/transform straight to the card
-    const handleTilt = (e: React.MouseEvent<HTMLDivElement>) => {
-        const el = e.currentTarget;
-        const r = el.getBoundingClientRect();
-        const px = (e.clientX - r.left) / r.width;
-        const py = (e.clientY - r.top) / r.height;
-        el.style.setProperty('--mx', `${px * 100}%`);
-        el.style.setProperty('--my', `${py * 100}%`);
-        el.style.transform =
-            `perspective(900px) rotateX(${(0.5 - py) * 7}deg) rotateY(${(px - 0.5) * 9}deg) translateY(-4px)`;
-    };
-
-    const resetTilt = (e: React.MouseEvent<HTMLDivElement>) => {
-        e.currentTarget.style.transform = '';
-    };
 
     const utc = clock.toISOString().slice(11, 19);
 
@@ -194,81 +98,62 @@ export function AppStorePage() {
                     </div>
                 </div>
 
-                {/* Primary Apps */}
-                <div className="mb-14">
-                    <div className="flex items-center gap-4 mb-8 animate-fade-up">
-                        <h2 className="text-md md:text-lg font-mono font-bold text-text uppercase tracking-widest">Active Applications</h2>
-                        <div className="h-[1px] flex-1 bg-gradient-to-r from-emerald-500/30 via-emerald-500/5 to-transparent" />
-                        <Badge type="emerald">CORE CONTROLS</Badge>
+                {/* Sections — every heading, tile and count below is read from
+                    src/lib/appCatalog.ts. Adding a section is an entry there. */}
+                {loading ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+                        {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-[196px] rounded-2xl" />)}
                     </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
-                        {loading ? (
-                            [1, 2, 3, 4].map((i) => (
-                                <Skeleton key={i} className="h-[320px] rounded-2xl" />
-                            ))
-                        ) : (
-                            primaryApps.map((app, i) => (
-                                <div
-                                    key={app.id}
-                                    onClick={() => navigate(app.path)}
-                                    onMouseMove={handleTilt}
-                                    onMouseLeave={resetTilt}
-                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(app.path); }}
-                                    role="button"
-                                    tabIndex={0}
-                                    aria-label={`Launch ${app.title}`}
-                                    style={{ '--glow': glows[app.theme] } as React.CSSProperties}
-                                    className={`hub-card stagger-${i + 1} opacity-0 animate-fade-up group relative flex flex-col
-                                        min-h-[320px] rounded-2xl cursor-pointer bg-card/80 backdrop-blur
-                                        border border-white/5 overflow-hidden`}
-                                >
-                                    {/* cursor spotlight + rotating border beam */}
-                                    <div className="hub-spotlight" />
-                                    <div className="hub-beam-wrap rounded-2xl"><div className="hub-beam" /></div>
-
-                                    {/* ghost index numeral */}
-                                    <span className="absolute top-4 right-5 font-mono font-extrabold text-6xl leading-none text-white/[0.04] group-hover:text-white/[0.08] transition-colors select-none">
-                                        {String(i + 1).padStart(2, '0')}
-                                    </span>
-
-                                    <div className="p-6 md:p-7 flex-1 relative">
-                                        {/* icon tile with orbiting satellite dot */}
-                                        <div className="relative w-14 h-14 mb-6">
-                                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ring-1 transition-transform duration-300 group-hover:scale-110 ${themeStyles[app.theme]}`}>
-                                                <app.icon className="w-7 h-7" />
+                ) : (
+                    <div className="space-y-14">
+                        {SECTIONS.map(section => {
+                            const n = appCount(section);
+                            return (
+                                <section key={section.id} aria-labelledby={`sec-${section.id}`} className="animate-fade-up">
+                                    <div className="flex items-start gap-4 mb-5">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-3 mb-1 flex-wrap">
+                                                <h2 id={`sec-${section.id}`} className="text-2xl font-bold text-text">
+                                                    {section.title}
+                                                </h2>
+                                                <Link
+                                                    to={section.route}
+                                                    className="inline-flex items-center gap-1 text-meta font-mono uppercase tracking-widest text-textDim hover:text-live transition-colors duration-base ease-standard"
+                                                >
+                                                    Open section
+                                                    <ArrowRight className="w-3 h-3" />
+                                                </Link>
                                             </div>
-                                            <div className="absolute inset-[-6px] opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-spin-slow pointer-events-none">
-                                                <span
-                                                    className="absolute top-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full"
-                                                    style={{ background: `rgb(${glows[app.theme]})` }}
-                                                />
-                                            </div>
+                                            <p className="text-body text-textMuted leading-relaxed max-w-3xl">
+                                                {section.description}
+                                            </p>
                                         </div>
-
-                                        <div className="flex items-center gap-3 mb-3 flex-wrap">
-                                            <h3 className="text-lg font-bold text-text">{app.title}</h3>
-                                            <Badge type={app.theme}>{app.tag}</Badge>
-                                        </div>
-
-                                        <p className="text-xs md:text-sm text-textMuted leading-relaxed">
-                                            {app.description}
-                                        </p>
+                                        <span className="shrink-0 text-meta font-mono uppercase tracking-widest text-textDim pt-2">
+                                            {n} {n === 1 ? 'app' : 'apps'}
+                                        </span>
                                     </div>
 
-                                    <div className="px-6 md:px-7 py-3.5 bg-black/20 border-t border-border/30 flex items-center justify-between relative">
-                                        <span className="text-[10px] font-mono text-textMuted">{app.version}</span>
-                                        <div className="flex items-center gap-2 text-xs font-semibold transition-all group-hover:gap-3"
-                                            style={{ color: `rgb(${glows[app.theme]})` }}>
-                                            <span className="tracking-widest font-mono">LAUNCH</span>
-                                            <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
-                                        </div>
+                                    <div className="space-y-8">
+                                        {section.groups.map((group, gi) => (
+                                            <div key={group.title ?? `g${gi}`}>
+                                                {group.title && (
+                                                    <div className="border-l-2 border-live/60 pl-3 mb-4">
+                                                        <h3 className="text-title font-bold text-text">{group.title}</h3>
+                                                        {group.description && (
+                                                            <p className="text-body text-textMuted mt-0.5">{group.description}</p>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                <AppTileGrid apps={group.apps} />
+                                            </div>
+                                        ))}
                                     </div>
-                                </div>
-                            ))
-                        )}
+                                </section>
+                            );
+                        })}
                     </div>
-                </div>
+                )}
+
             </main>
 
             <footer className="py-8 px-4 border-t border-border/30 text-center relative">

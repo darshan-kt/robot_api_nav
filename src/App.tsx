@@ -9,6 +9,11 @@ import { SimpleRoutePlannerPage } from './pages/SimpleRoutePlannerPage';
 import { HardwareSensorsLabPage } from './pages/HardwareSensorsLabPage';
 import { VisualTrackingLabPage } from './pages/VisualTrackingLabPage';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
+import { SectionPage } from './pages/SectionPage';
+import { AstraProPage } from './pages/sensors/AstraProPage';
+import { RplidarA2Page } from './pages/sensors/RplidarA2Page';
+import { ImuPage } from './pages/sensors/ImuPage';
+import { UltrasonicPage } from './pages/sensors/UltrasonicPage';
 
 function App() {
   return (
@@ -75,6 +80,18 @@ function App() {
               </ProtectedRoute>
             }
           />
+          {/* Section decks — one route, the catalog decides what renders */}
+          <Route
+            path="/section/:sectionId"
+            element={<ProtectedRoute><SectionPage /></ProtectedRoute>}
+          />
+
+          {/* Robot sensors — reference pages, no hardware access */}
+          <Route path="/sensors/astra-pro" element={<ProtectedRoute><AstraProPage /></ProtectedRoute>} />
+          <Route path="/sensors/rplidar-a2" element={<ProtectedRoute><RplidarA2Page /></ProtectedRoute>} />
+          <Route path="/sensors/imu" element={<ProtectedRoute><ImuPage /></ProtectedRoute>} />
+          <Route path="/sensors/ultrasonic" element={<ProtectedRoute><UltrasonicPage /></ProtectedRoute>} />
+
           {/* Fallback redirect */}
           <Route path="*" element={<Navigate to="/store" replace />} />
         </Routes>
