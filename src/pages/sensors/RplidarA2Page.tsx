@@ -1,5 +1,7 @@
 import { AppPage, Panel, SpecList, FailureModes, Interfaces, TwoUp } from '../../components/layout/AppPage';
 import { Figure, PolarScan } from '../../components/ui/Viz';
+import { LivePanel } from '../../components/layout/LivePanel';
+import { liveScanRanges } from '../../lib/liveFrames';
 
 export function RplidarA2Page() {
     return (
@@ -30,6 +32,33 @@ export function RplidarA2Page() {
                     <PolarScan beams={360} maxM={6} />
                 </Figure>
             </Panel>
+
+            <LivePanel
+                hz={10}
+                rateLabel="10 rev/s"
+                readout={tick => {
+                    const r = liveScanRanges(tick, 360);
+                    const hits = r.filter(v => v !== null) as number[];
+                    const nearest = Math.min(...hits);
+                    return (
+                        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 m-0">
+                            {[
+                                { k: 'Beams returning', v: `${hits.length} / ${r.length}` },
+                                { k: 'Nearest', v: `${nearest.toFixed(2)} m` },
+                                { k: 'Frame', v: `#${tick}` },
+                                { k: 'Topic', v: '/scan' },
+                            ].map(x => (
+                                <div key={x.k} className="rounded-xl border border-border/60 bg-card/60 px-4 py-3">
+                                    <dt className="text-meta font-mono uppercase tracking-widest text-textMuted mb-1">{x.k}</dt>
+                                    <dd className="text-body font-mono font-bold text-text m-0 tabular-nums">{x.v}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                    );
+                }}
+            >
+                {tick => <PolarScan ranges={liveScanRanges(tick, 360)} maxM={6} />}
+            </LivePanel>
 
             <TwoUp>
                 <Panel title="Hardware">

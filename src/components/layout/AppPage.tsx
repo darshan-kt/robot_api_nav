@@ -2,7 +2,30 @@ import { Link } from 'react-router-dom';
 import { ChevronRight, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Header } from './Header';
-import { appMeta } from '../../lib/appCatalog';
+import { appMeta, type Provenance } from '../../lib/appCatalog';
+
+/**
+ * The provenance caveat, stated once per page rather than on every panel —
+ * and worded for what the page actually is. A bench-results page claiming its
+ * figures come from datasheets is its own small dishonesty.
+ */
+const CAVEAT: Partial<Record<Provenance, string>> = {
+    'SPEC SHEET':
+        'Reference page. Figures come from datasheets and manufacturer specifications, not from the ' +
+        'robot attached to this console — nothing here reads a live sensor, and nothing here can command hardware.',
+    'RECORDED BAG':
+        'Reference page. Figures are derived from captured frames and datasheet specifications, not from the ' +
+        'robot attached to this console — nothing here reads a live sensor, and nothing here can command hardware.',
+    'BENCH RESULTS':
+        'Bench results from recorded runs, not a live run and not a guarantee. The numbers describe what ' +
+        'this behaviour did on one platform on one floor; nothing on this page executes, and nothing here can command hardware.',
+    'DESIGN DRAFT':
+        'Design draft. None of this is implemented — there is no server, no tool surface and no model wired ' +
+        'to anything. Treat every table here as a proposal to argue with rather than a description of the running system.',
+    'REFERENCE':
+        'Reference page. The mathematics is evaluated rather than illustrated, but the usage it describes is ' +
+        'documentation of intent — nothing on this page executes, and nothing here can command hardware.',
+};
 
 /**
  * Shared frame for every reference page.
@@ -33,7 +56,7 @@ export function AppPage({
 
             <main className="flex-1 w-full max-w-5xl mx-auto px-4 md:px-8 py-8 md:py-10">
                 <nav aria-label="Breadcrumb" className="mb-6">
-                    <ol className="flex items-center gap-1.5 text-meta font-mono uppercase tracking-widest text-textDim list-none p-0 m-0 flex-wrap">
+                    <ol className="flex items-center gap-1.5 text-meta font-mono uppercase tracking-widest text-textMuted list-none p-0 m-0 flex-wrap">
                         <li><Link to="/store" className="hover:text-live transition-colors duration-base ease-standard">Store</Link></li>
                         <li aria-hidden="true"><ChevronRight className="w-3 h-3" /></li>
                         <li><Link to={section.route} className="hover:text-live transition-colors duration-base ease-standard">{section.title}</Link></li>
@@ -49,7 +72,7 @@ export function AppPage({
                         </span>
                         <div className="min-w-0">
                             <h1 className="text-2xl font-bold text-text">{app.title}</h1>
-                            <span className="text-meta font-mono uppercase tracking-widest text-textDim">{app.provenance}</span>
+                            <span className="text-meta font-mono uppercase tracking-widest text-textMuted">{app.provenance}</span>
                         </div>
                     </div>
                     <p className="text-body text-textMuted leading-relaxed max-w-3xl">{summary}</p>
@@ -60,7 +83,7 @@ export function AppPage({
                 <dl className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-10 m-0">
                     {facts.map(f => (
                         <div key={f.label} className="rounded-xl border border-border/60 bg-card/60 px-4 py-3">
-                            <dt className="text-meta font-mono uppercase tracking-widest text-textDim mb-1">{f.label}</dt>
+                            <dt className="text-meta font-mono uppercase tracking-widest text-textMuted mb-1">{f.label}</dt>
                             <dd className="text-body font-mono font-bold text-text m-0 break-words">{f.value}</dd>
                         </div>
                     ))}
@@ -68,10 +91,8 @@ export function AppPage({
 
                 <div className="space-y-10">{children}</div>
 
-                <p className="mt-12 pt-5 border-t border-border/40 text-meta text-textDim leading-relaxed">
-                    Reference page. Figures are drawn from datasheets and captured frames, not from the
-                    robot attached to this console — nothing here reads a live sensor, and nothing here
-                    can command hardware.
+                <p className="mt-12 pt-5 border-t border-border/40 text-meta text-textMuted leading-relaxed">
+                    {CAVEAT[app.provenance] ?? CAVEAT.REFERENCE}
                 </p>
             </main>
         </div>
@@ -138,7 +159,7 @@ export function Interfaces({ rows, note }: { rows: { dir: 'pub' | 'sub'; topic: 
                         </span>
                         <span className="text-body font-mono text-text break-all">{r.topic}</span>
                         <span className="text-meta font-mono text-textMuted break-all">{r.type}</span>
-                        <span className="text-meta font-mono text-textDim ml-auto shrink-0">{r.rate}</span>
+                        <span className="text-meta font-mono text-textMuted ml-auto shrink-0">{r.rate}</span>
                     </li>
                 ))}
             </ul>
@@ -183,7 +204,7 @@ export function Readouts({ items }: { items: { label: string; value: string; imp
             {items.map(it => (
                 <div key={it.label}
                     className={`rounded-xl border px-4 py-3 ${it.imperfect ? 'border-warning/40 bg-warning/5' : 'border-border/60 bg-card/60'}`}>
-                    <dt className="text-meta font-mono uppercase tracking-widest text-textDim mb-1">{it.label}</dt>
+                    <dt className="text-meta font-mono uppercase tracking-widest text-textMuted mb-1">{it.label}</dt>
                     <dd className={`text-body font-mono font-bold m-0 break-words ${it.imperfect ? 'text-warning' : 'text-text'}`}>
                         {it.value}
                     </dd>

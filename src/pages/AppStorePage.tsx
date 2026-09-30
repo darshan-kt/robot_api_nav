@@ -76,7 +76,7 @@ export function AppStorePage() {
                     </div>
 
                     <h1 className="hub-headline text-4xl md:text-6xl font-mono font-extrabold tracking-tight uppercase leading-none mb-4">
-                        My appstore
+                        Robotics appstore
                         <span className="hub-cursor text-emerald-400">_</span>
                     </h1>
 
@@ -112,23 +112,20 @@ export function AppStorePage() {
                                 <section key={section.id} aria-labelledby={`sec-${section.id}`} className="animate-fade-up">
                                     <div className="flex items-start gap-4 mb-5">
                                         <div className="min-w-0 flex-1">
-                                            <div className="flex items-center gap-3 mb-1 flex-wrap">
+                                            <div className="flex items-center gap-3 flex-wrap">
                                                 <h2 id={`sec-${section.id}`} className="text-2xl font-bold text-text">
                                                     {section.title}
                                                 </h2>
                                                 <Link
                                                     to={section.route}
-                                                    className="inline-flex items-center gap-1 text-meta font-mono uppercase tracking-widest text-textDim hover:text-live transition-colors duration-base ease-standard"
+                                                    className="inline-flex items-center gap-1 text-meta font-mono uppercase tracking-widest text-textMuted hover:text-live transition-colors duration-base ease-standard"
                                                 >
                                                     Open section
                                                     <ArrowRight className="w-3 h-3" />
                                                 </Link>
                                             </div>
-                                            <p className="text-body text-textMuted leading-relaxed max-w-3xl">
-                                                {section.description}
-                                            </p>
                                         </div>
-                                        <span className="shrink-0 text-meta font-mono uppercase tracking-widest text-textDim pt-2">
+                                        <span className="shrink-0 text-meta font-mono uppercase tracking-widest text-textMuted pt-1">
                                             {n} {n === 1 ? 'app' : 'apps'}
                                         </span>
                                     </div>

@@ -1,5 +1,7 @@
 import { AppPage, Panel, SpecList, FailureModes, Interfaces, TwoUp } from '../../components/layout/AppPage';
-import { Figure, DepthEnvelope } from '../../components/ui/Viz';
+import { Figure, DepthEnvelope, DepthGrid } from '../../components/ui/Viz';
+import { LivePanel } from '../../components/layout/LivePanel';
+import { liveDepthGrid } from '../../lib/liveFrames';
 
 export function AstraProPage() {
     return (
@@ -38,6 +40,32 @@ export function AstraProPage() {
                     />
                 </Figure>
             </Panel>
+
+            <LivePanel
+                hz={8}
+                rateLabel="30 fps on the real device"
+                readout={tick => {
+                    const g = liveDepthGrid(tick, true);
+                    const flat = g.flat();
+                    return (
+                        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 m-0">
+                            {[
+                                { k: 'Grid', v: `${g[0].length} × ${g.length}` },
+                                { k: 'Nearest', v: `${Math.min(...flat).toFixed(2)} m` },
+                                { k: 'Farthest', v: `${Math.max(...flat).toFixed(2)} m` },
+                                { k: 'Registered', v: 'true' },
+                            ].map(x => (
+                                <div key={x.k} className="rounded-xl border border-border/60 bg-card/60 px-4 py-3">
+                                    <dt className="text-meta font-mono uppercase tracking-widest text-textMuted mb-1">{x.k}</dt>
+                                    <dd className="text-body font-mono font-bold text-text m-0 tabular-nums">{x.v}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                    );
+                }}
+            >
+                {tick => <DepthGrid grid={liveDepthGrid(tick, true)} nearM={0.8} farM={4.5} />}
+            </LivePanel>
 
             <TwoUp>
                 <Panel title="Hardware">

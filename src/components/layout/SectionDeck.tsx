@@ -30,12 +30,11 @@ export function SectionDeck({
             <Header showBack backTo="/store" title={section.title} icon={section.icon} />
 
             <main className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-8 py-8 md:py-10">
-                <div className="flex items-start justify-between gap-6 mb-8">
+                <div className="flex items-baseline justify-between gap-6 mb-8">
                     <div className="max-w-2xl min-w-0">
-                        <h1 className="text-2xl font-bold text-text mb-2">{section.title}</h1>
-                        <p className="text-body text-textMuted leading-relaxed">{section.description}</p>
+                        <h1 className="text-2xl font-bold text-text">{section.title}</h1>
                     </div>
-                    <span className="shrink-0 text-meta font-mono uppercase tracking-widest text-textDim pt-1">
+                    <span className="shrink-0 text-meta font-mono uppercase tracking-widest text-textMuted">
                         {n} {n === 1 ? 'app' : 'apps'}
                     </span>
                 </div>
@@ -92,13 +91,13 @@ export function AppTileGrid({ apps, headingLevel = 3 }: { apps: AppGroup['apps']
                             <span className="w-11 h-11 rounded-xl bg-overlay/5 border border-border/60 flex items-center justify-center">
                                 <app.icon className="w-5 h-5 text-live" />
                             </span>
-                            <ArrowRight className="w-4 h-4 text-textDim group-hover:text-live transition-colors duration-base ease-standard" />
+                            <ArrowRight className="w-4 h-4 text-textMuted group-hover:text-live transition-colors duration-base ease-standard" />
                         </div>
 
                         <H className="text-title font-bold text-text mb-1.5">{app.title}</H>
                         <p className="text-body text-textMuted leading-relaxed flex-1">{app.blurb}</p>
 
-                        <span className="mt-4 pt-3 border-t border-border/40 text-meta font-mono uppercase tracking-widest text-textDim">
+                        <span className="mt-4 pt-3 border-t border-border/40 text-meta font-mono uppercase tracking-widest text-textMuted">
                             {app.provenance}
                         </span>
                     </Link>

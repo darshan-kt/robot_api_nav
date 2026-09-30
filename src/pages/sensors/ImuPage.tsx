@@ -1,5 +1,7 @@
 import { AppPage, Panel, SpecList, FailureModes, Interfaces, TwoUp } from '../../components/layout/AppPage';
 import { Figure, AxisBars } from '../../components/ui/Viz';
+import { LivePanel } from '../../components/layout/LivePanel';
+import { liveImu } from '../../lib/liveFrames';
 
 export function ImuPage() {
     return (
@@ -32,12 +34,49 @@ export function ImuPage() {
                     <AxisBars
                         groups={[
                             { label: 'Accelerometer', unit: 'm/s²', span: 12, values: [0.04, -0.02, 9.79] },
-                            { label: 'Gyroscope', unit: 'rad/s', span: 0.02, values: [0.001, -0.002, 0.0] },
+                            { label: 'Gyroscope', unit: 'rad/s', span: 0.02, values: [0.001, -0.002, 0.0], decimals: 3 },
                             { label: 'Magnetometer', unit: 'µT', span: 60, values: [21.3, 2.4, -43.1] },
                         ]}
                     />
                 </Figure>
             </Panel>
+
+            <LivePanel
+                hz={12}
+                rateLabel="100 Hz on the real device"
+                readout={tick => {
+                    const f = liveImu(tick);
+                    const yawRate = f.gyro[2];
+                    return (
+                        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 m-0">
+                            {[
+                                { k: 'Yaw rate', v: `${yawRate.toFixed(4)} rad/s` },
+                                { k: 'Accel magnitude', v: `${Math.hypot(...f.accel).toFixed(3)} m/s²` },
+                                { k: 'Frame', v: `#${tick}` },
+                                { k: 'Topic', v: '/imu' },
+                            ].map(x => (
+                                <div key={x.k} className="rounded-xl border border-border/60 bg-card/60 px-4 py-3">
+                                    <dt className="text-meta font-mono uppercase tracking-widest text-textMuted mb-1">{x.k}</dt>
+                                    <dd className="text-body font-mono font-bold text-text m-0 tabular-nums">{x.v}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                    );
+                }}
+            >
+                {tick => {
+                    const f = liveImu(tick);
+                    return (
+                        <AxisBars
+                            groups={[
+                                { label: 'Accelerometer', unit: 'm/s²', span: 12, values: f.accel },
+                                { label: 'Gyroscope', unit: 'rad/s', span: 0.02, values: f.gyro, decimals: 4 },
+                                { label: 'Magnetometer', unit: 'µT', span: 60, values: f.mag },
+                            ]}
+                        />
+                    );
+                }}
+            </LivePanel>
 
             <TwoUp>
                 <Panel title="Hardware">

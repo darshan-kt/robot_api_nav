@@ -16,6 +16,8 @@
 import {
     LayoutDashboard, OctagonX, Smartphone, Route, CircuitBoard, Eye,
     Camera, Radar, Compass, Waves,
+    ScanLine, Crosshair, Footprints, Shield,
+    Sigma, Activity, Gauge, Network, MessageSquare, Brain,
     type LucideIcon,
 } from 'lucide-react';
 
@@ -56,7 +58,6 @@ export interface AppGroup {
 export interface SectionDef {
     id: string;
     title: string;
-    description: string;
     route: string;
     icon: LucideIcon;
     groups: AppGroup[];
@@ -66,8 +67,6 @@ export const SECTIONS: SectionDef[] = [
     {
         id: 'control',
         title: 'Robot control',
-        description:
-            'The surfaces that can move the robot. Everything here talks to the gateway and takes effect on real hardware.',
         route: '/section/control',
         icon: Smartphone,
         groups: [
@@ -112,21 +111,11 @@ export const SECTIONS: SectionDef[] = [
     {
         id: 'sensors',
         title: 'Robot sensors',
-        description:
-            'One page per sensor on the platform: what it measures, what it publishes, and where it fails. Reference only — nothing here can command hardware.',
         route: '/section/sensors',
         icon: CircuitBoard,
         groups: [
             {
                 apps: [
-                    {
-                        id: 'astra-pro',
-                        title: 'Orbbec Astra Pro',
-                        blurb: 'Structured-light depth camera. Registered RGB-D from 0.6 m, over two separate USB identities.',
-                        route: '/sensors/astra-pro',
-                        icon: Camera,
-                        provenance: 'SPEC SHEET',
-                    },
                     {
                         id: 'rplidar-a2',
                         title: 'RPLIDAR A2',
@@ -144,6 +133,14 @@ export const SECTIONS: SectionDef[] = [
                         provenance: 'RECORDED BAG',
                     },
                     {
+                        id: 'astra-pro',
+                        title: 'Orbbec Astra Pro',
+                        blurb: 'Structured-light depth camera. Registered RGB-D from 0.6 m, over two separate USB identities.',
+                        route: '/sensors/astra-pro',
+                        icon: Camera,
+                        provenance: 'SPEC SHEET',
+                    },
+                    {
                         id: 'ultrasonic',
                         title: 'Ultrasonic array',
                         blurb: 'Four HC-SR04 rangefinders covering the blind band the planar scanner cannot see.',
@@ -155,8 +152,6 @@ export const SECTIONS: SectionDef[] = [
             },
             {
                 title: 'Interactive',
-                description:
-                    'Tools rather than reference pages — these run a simulated data source you can drive.',
                 apps: [
                     {
                         id: 'hardware-sensors-lab',
@@ -166,13 +161,121 @@ export const SECTIONS: SectionDef[] = [
                         icon: CircuitBoard,
                         provenance: 'SIMULATED DATA',
                     },
+                ],
+            },
+        ],
+    },
+    {
+        id: 'projects',
+        title: 'Robotics projects',
+        route: '/section/projects',
+        icon: Route,
+        groups: [
+            {
+                apps: [
+                    {
+                        id: 'line-following',
+                        title: 'Line following',
+                        blurb: 'PI control on a thresholded floor stripe, with a stop condition instead of a search.',
+                        route: '/projects/line-following',
+                        icon: ScanLine,
+                        provenance: 'SIMULATED DATA',
+                    },
+                    {
+                        id: 'object-tracking',
+                        title: 'Object tracking',
+                        blurb: 'HSV blob tracking gated on area continuity, steering on true bearing rather than pixel offset.',
+                        route: '/projects/object-tracking',
+                        icon: Crosshair,
+                        provenance: 'SIMULATED DATA',
+                    },
+                    {
+                        id: 'human-follower',
+                        title: 'Human follower',
+                        blurb: 'Re-identification lock at a fixed standoff, capped below walking pace and biased to halt.',
+                        route: '/projects/human-follower',
+                        icon: Footprints,
+                        provenance: 'SIMULATED DATA',
+                    },
+                    {
+                        id: 'patrolling',
+                        title: 'Patrolling',
+                        blurb: 'An unattended waypoint loop whose real design problem is bounding the recovery behaviours.',
+                        route: '/projects/patrolling',
+                        icon: Shield,
+                        provenance: 'SIMULATED DATA',
+                    },
+                ],
+            },
+            {
+                title: 'Interactive',
+                apps: [
                     {
                         id: 'visual-tracking-lab',
                         title: 'Visual tracking lab',
-                        blurb: 'Calibrate HSV thresholds live, then watch the tracking pipeline compute steering.',
+                        blurb: 'Calibrate HSV thresholds live and watch the pipeline compute steering.',
                         route: '/visual-tracking-lab',
                         icon: Eye,
                         provenance: 'SIMULATED DATA',
+                    },
+                ],
+            },
+        ],
+    },
+    {
+        id: 'ai',
+        title: 'AI & robotics',
+        route: '/section/ai',
+        icon: Brain,
+        groups: [
+            {
+                title: 'Statistical distributions',
+                description: 'Each page names the subsystem in this codebase that relies on the assumption.',
+                apps: [
+                    {
+                        id: 'uniform',
+                        title: 'Uniform',
+                        blurb: 'Maximum entropy between two bounds — the prior AMCL scatters particles with.',
+                        route: '/ai/uniform',
+                        icon: Sigma,
+                        provenance: 'SIMULATED DATA',
+                    },
+                    {
+                        id: 'exponential',
+                        title: 'Exponential',
+                        blurb: 'Memoryless waiting times, and what reconnect backoff costs without them.',
+                        route: '/ai/exponential',
+                        icon: Activity,
+                        provenance: 'SIMULATED DATA',
+                    },
+                    {
+                        id: 'normal',
+                        title: 'Normal (Gaussian)',
+                        blurb: 'The pose covariance the filter is seeded with, and why its tails are a lie.',
+                        route: '/ai/normal',
+                        icon: Gauge,
+                        provenance: 'SIMULATED DATA',
+                    },
+                ],
+            },
+            {
+                title: 'AI driven robot',
+                apps: [
+                    {
+                        id: 'ros2-mcp',
+                        title: 'ROS 2 MCP design',
+                        blurb: 'What a model is allowed to call, and what sits below it that no tool can reach.',
+                        route: '/ai/ros2-mcp',
+                        icon: Network,
+                        provenance: 'DESIGN DRAFT',
+                    },
+                    {
+                        id: 'prompting',
+                        title: 'Prompting robotics',
+                        blurb: 'Prompt patterns for a system that acts, optimised for what happens when it is wrong.',
+                        route: '/ai/prompting',
+                        icon: MessageSquare,
+                        provenance: 'DESIGN DRAFT',
                     },
                 ],
             },

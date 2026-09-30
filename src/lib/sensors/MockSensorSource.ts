@@ -117,14 +117,14 @@ export function computeRoomRangeM(angleRad: number, rayIndex: number, tick: numb
 // Astra Pro — synthetic depth + RGB pair
 // =============================================================================
 
-interface SceneShape {
+export interface SceneShape {
   x: number; // normalized 0..1
   y: number; // normalized 0..1
   r: number; // normalized radius
   hue: number;
 }
 
-const ASTRA_SCENE_SHAPES: SceneShape[] = [
+export const ASTRA_SCENE_SHAPES: SceneShape[] = [
   { x: 0.3, y: 0.4, r: 0.08, hue: 200 },
   { x: 0.6, y: 0.55, r: 0.12, hue: 30 },
   { x: 0.75, y: 0.25, r: 0.06, hue: 320 },

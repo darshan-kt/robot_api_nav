@@ -22,7 +22,87 @@ export function SectionPage() {
 const FOOTERS: Record<string, React.ReactNode> = {
     control: <ControlAuthority />,
     sensors: <SensorCoverage />,
+    projects: <ProjectRisk />,
 };
+
+/**
+ * Risk is not difficulty. The comparison exists to make that distinction
+ * explicit, because it is the one place the section can carry an engineering
+ * judgement rather than four summaries.
+ */
+function ProjectRisk() {
+    const rows = [
+        {
+            project: 'Line following', sensors: 'RGB', speed: '0.34 m/s', loop: '30 Hz', risk: 'low',
+            why: 'Fixed taped route, nothing to reach but floor. Fiddliest of the four to tune.',
+        },
+        {
+            project: 'Object tracking', sensors: 'RGB', speed: '0.28 m/s', loop: '30 Hz', risk: 'low',
+            why: 'Approaches an object it chose; stops rather than searching when the lock drops.',
+        },
+        {
+            project: 'Human follower', sensors: 'RGB-D', speed: '0.22 m/s', loop: '15 Hz', risk: 'high',
+            why: 'Moves toward a person who has not consented. Simplest controller here.',
+        },
+        {
+            project: 'Patrolling', sensors: 'LIDAR + odom', speed: '0.40 m/s', loop: '10 Hz', risk: 'medium',
+            why: 'Ordinary Nav2 — running unattended, at night, in an occupied building.',
+        },
+    ];
+    const riskStyle: Record<string, string> = {
+        low: 'bg-live/15 text-live border-live/40',
+        medium: 'bg-warning/15 text-warning border-warning/40',
+        high: 'bg-fault/15 text-fault border-fault/40',
+    };
+
+    return (
+        <section>
+            <h2 className="text-title font-bold text-text mb-2">What a failure can physically reach</h2>
+            <p className="text-body text-textMuted leading-relaxed mb-5 max-w-3xl">
+                The risk column is not how hard the project is to build. It is what a failure can touch.
+            </p>
+
+            <div className="relative overflow-x-auto">
+                <table className="w-full min-w-[720px] border-collapse">
+                    <caption className="sr-only">Projects compared by sensors, speed, loop rate and risk</caption>
+                    <thead>
+                        <tr>
+                            {['Project', 'Sensors', 'Speed', 'Loop', 'Risk', 'Why'].map(h => (
+                                <th key={h} scope="col" className="text-left text-meta font-mono uppercase tracking-widest text-textMuted pb-3 pr-4">{h}</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map(r => (
+                            <tr key={r.project} className="border-t border-border/40 align-top">
+                                <th scope="row" className="text-left py-3 pr-4 text-body font-medium text-text whitespace-nowrap">{r.project}</th>
+                                <td className="py-3 pr-4 text-body font-mono text-textMuted whitespace-nowrap">{r.sensors}</td>
+                                <td className="py-3 pr-4 text-body font-mono text-textMuted whitespace-nowrap">{r.speed}</td>
+                                <td className="py-3 pr-4 text-body font-mono text-textMuted whitespace-nowrap">{r.loop}</td>
+                                <td className="py-3 pr-4">
+                                    <span className={`inline-block px-2 py-0.5 rounded-full border text-meta font-mono uppercase tracking-widest ${riskStyle[r.risk]}`}>
+                                        {r.risk}
+                                    </span>
+                                </td>
+                                <td className="py-3 pr-4 text-body text-textMuted">{r.why}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            <p className="text-body text-textMuted leading-relaxed mt-6 max-w-3xl">
+                Read the first and third rows together. Line following is by a wide margin the hardest of
+                these to get working — the thresholding alone takes longer than the other three controllers
+                combined — and it is the safest thing on the list, because the worst it can do is drive off
+                a strip of tape at walking-pace-over-six. The human follower has the simplest controller
+                here, a proportional term on one distance, and it is the only one that moves toward a
+                person. Difficulty is what it costs you to build. Risk is what it costs someone else when
+                it is wrong, and the two are not correlated.
+            </p>
+        </section>
+    );
+}
 
 /**
  * Four tiles left ~440px of dead canvas and, worse, did not answer the
@@ -87,7 +167,7 @@ function ControlAuthority() {
                             <tr key={r.app} className="border-t border-border/40 align-top">
                                 <th scope="row" className="text-left py-3 pr-4">
                                     <span className="block text-body font-medium text-text whitespace-nowrap">{r.app}</span>
-                                    <span className={`text-meta font-mono uppercase tracking-widest ${r.moves ? 'text-warning' : 'text-textDim'}`}>
+                                    <span className={`text-meta font-mono uppercase tracking-widest ${r.moves ? 'text-warning' : 'text-textMuted'}`}>
                                         {r.moves ? 'can move it' : 'cannot move it'}
                                     </span>
                                 </th>
@@ -123,10 +203,12 @@ function SensorCoverage() {
 
             <CoverageMatrix
                 bands={['0 – 0.15 m', '0.15 – 0.6 m', '0.6 – 4 m', '4 – 8 m', '8 – 12 m']}
+                // Row order follows the tiles above, so the deck reads as one
+                // list rather than two orderings of the same four sensors.
                 rows={[
-                    { sensor: 'Ultrasonic array', cells: ['partial', 'full', 'full', 'none', 'none'] },
                     { sensor: 'RPLIDAR A2', cells: ['none', 'full', 'full', 'full', 'partial'] },
                     { sensor: 'Orbbec Astra Pro', cells: ['none', 'none', 'full', 'partial', 'none'] },
+                    { sensor: 'Ultrasonic array', cells: ['partial', 'full', 'full', 'none', 'none'] },
                 ]}
             />
 

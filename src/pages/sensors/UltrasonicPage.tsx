@@ -1,5 +1,7 @@
 import { AppPage, Panel, SpecList, FailureModes, Interfaces, TwoUp } from '../../components/layout/AppPage';
 import { Figure, BeamCones } from '../../components/ui/Viz';
+import { LivePanel } from '../../components/layout/LivePanel';
+import { liveRanges } from '../../lib/liveFrames';
 
 export function UltrasonicPage() {
     return (
@@ -40,6 +42,44 @@ export function UltrasonicPage() {
                     />
                 </Figure>
             </Panel>
+
+            <LivePanel
+                hz={12}
+                rateLabel="12 Hz — the array's real cycle"
+                readout={tick => {
+                    const r = liveRanges(tick);
+                    const names = ['front-left', 'centre-left', 'centre-right', 'front-right'];
+                    return (
+                        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 m-0">
+                            {r.map((v, i) => (
+                                <div key={names[i]}
+                                    className={`rounded-xl border px-4 py-3 ${v === null ? 'border-warning/40 bg-warning/5' : 'border-border/60 bg-card/60'}`}>
+                                    <dt className="text-meta font-mono uppercase tracking-widest text-textMuted mb-1">{names[i]}</dt>
+                                    <dd className={`text-body font-mono font-bold m-0 tabular-nums ${v === null ? 'text-warning' : 'text-text'}`}>
+                                        {v === null ? 'no echo' : `${v.toFixed(2)} m`}
+                                    </dd>
+                                </div>
+                            ))}
+                        </dl>
+                    );
+                }}
+            >
+                {tick => {
+                    const r = liveRanges(tick);
+                    return (
+                        <BeamCones
+                            beamDeg={15}
+                            maxM={3}
+                            transducers={[
+                                { name: 'front-left', mountDeg: -60, echoM: r[0] },
+                                { name: 'centre-left', mountDeg: -20, echoM: r[1] },
+                                { name: 'centre-right', mountDeg: 20, echoM: r[2] },
+                                { name: 'front-right', mountDeg: 60, echoM: r[3] },
+                            ]}
+                        />
+                    );
+                }}
+            </LivePanel>
 
             <TwoUp>
                 <Panel title="Hardware">

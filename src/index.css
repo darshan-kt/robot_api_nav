@@ -69,7 +69,7 @@
     --c-border: 199 210 221;
     --c-accent: 0 122 88;
     --c-info: 2 118 178;
-    --c-warning: 146 94 0;
+    --c-warning: 124 74 2;   /* darkened: 146 94 0 measured 4.46 on its own tint */
     --c-danger: 190 18 60;
     --c-text: 15 28 36;
     --c-text-muted: 74 90 104;
@@ -374,6 +374,73 @@
   /* Horizontal scrollbar for tables on mobile */
   .table-container {
     @apply w-full overflow-x-auto;
+  }
+
+  /* ── Lab project loops ────────────────────────────────────────────────
+     The looping "in action" scenes on the project pages. CSS animations
+     rather than SMIL or a .gif on purpose: SMIL ignores
+     prefers-reduced-motion, and a gif can neither follow the theme nor be
+     frozen. These are covered by the global reduced-motion guard above. */
+
+  .lab-path {
+    offset-rotate: auto;
+    animation: lab-travel var(--dur, 7s) linear infinite;
+  }
+
+  @keyframes lab-travel {
+    from { offset-distance: 0%; }
+    to   { offset-distance: 100%; }
+  }
+
+  .lab-sway {
+    animation: lab-sway var(--dur, 4s) ease-in-out infinite alternate;
+  }
+
+  @keyframes lab-sway {
+    from { transform: translateX(calc(var(--amp, 40px) * -1)); }
+    to   { transform: translateX(var(--amp, 40px)); }
+  }
+
+  .lab-wake {
+    animation: lab-wake var(--dur, 7s) linear infinite;
+  }
+
+  @keyframes lab-wake {
+    0%, 14%  { opacity: 0.15; r: 3; }
+    18%      { opacity: 0.95; r: 6; }
+    40%, 100% { opacity: 0.15; r: 3; }
+  }
+
+  /* Distribution lab scenes. */
+
+  .lab-converge {
+    animation: lab-converge var(--dur, 6s) ease-in-out infinite;
+  }
+
+  @keyframes lab-converge {
+    0%, 30%   { transform: translate(0, 0); opacity: 0.75; }
+    70%, 88%  { transform: translate(var(--tx), var(--ty)); opacity: 0.9; }
+    100%      { transform: translate(0, 0); opacity: 0.75; }
+  }
+
+  .lab-arrive {
+    animation: lab-arrive var(--dur, 4s) ease-in infinite;
+  }
+
+  @keyframes lab-arrive {
+    0%       { transform: translateX(-110px); opacity: 0; }
+    35%      { opacity: 1; }
+    70%, 100% { transform: translateX(0); opacity: 1; }
+  }
+
+  .lab-run {
+    animation: lab-run var(--dur, 5s) ease-in-out infinite;
+  }
+
+  @keyframes lab-run {
+    0%        { transform: translate(70px, 120px); }
+    55%, 78%  { transform: translate(394px, 120px); }
+    100%      { transform: translate(70px, 120px); }
   }
 
   /* ── AppStore hub (“Mission Deck”) ──────────────────────────────────── */
