@@ -51,11 +51,101 @@
   }
 
   :focus-visible {
-    @apply outline-none ring-2 ring-emerald-400 ring-offset-2 ring-offset-background;
+    @apply outline-none ring-2 ring-focus ring-offset-2 ring-offset-background;
+  }
+
+  /* Reduced motion, applied globally.
+     The per-class rule further up only ever named the .hub-* decorations, so
+     everything else kept animating: measured with prefers-reduced-motion on,
+     /store still ran 11 infinite animations and the Emergency Stop icon kept
+     its animate-bounce indefinitely (WCAG 2.2.2). Tailwind's own animate-*
+     utilities were never covered. Iteration count is clamped rather than set
+     to `animation: none` so that fill-forwards reveals (.animate-fade-up,
+     which starts at opacity 0) still land on their final visible state. */
+  @media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
 @layer utilities {
+
+  /* ── Hit-area helpers ────────────────────────────────────────────────── */
+
+  /* Expands a control's *pointer* target to the 44px WCAG 2.5.8 minimum
+     without changing a single pixel of its rendered box — the pseudo-element
+     is invisible and sits outside flow, so dense HUD chrome (the ON/OFF feed
+     pills measured 59x25) keeps its compact look and still gets a full-size
+     target. Requires the host element to establish a stacking context. */
+  .tap-target {
+    position: relative;
+  }
+
+  .tap-target::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 100%;
+    min-width: theme('spacing.tap');
+    min-height: theme('spacing.tap');
+  }
+
+  /* Range input with a 44px grab area but a visually thin track. Native
+     `accent-color` cannot do this: it styles the track/thumb but leaves the
+     input's own 6px box as the only hit area. */
+  .control-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: theme('spacing.tap');
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .control-range::-webkit-slider-runnable-track {
+    height: theme('spacing.1.5');
+    border-radius: theme('borderRadius.full');
+    background: theme('colors.background');
+    border: 1px solid theme('colors.border');
+  }
+
+  .control-range::-moz-range-track {
+    height: theme('spacing.1.5');
+    border-radius: theme('borderRadius.full');
+    background: theme('colors.background');
+    border: 1px solid theme('colors.border');
+  }
+
+  .control-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: theme('spacing.5');
+    height: theme('spacing.5');
+    margin-top: -0.4375rem;
+    /* centres the 20px thumb on the 6px track */
+    border-radius: theme('borderRadius.full');
+    background: theme('colors.liveStrong');
+    border: 2px solid theme('colors.background');
+  }
+
+  .control-range::-moz-range-thumb {
+    width: theme('spacing.5');
+    height: theme('spacing.5');
+    border-radius: theme('borderRadius.full');
+    background: theme('colors.liveStrong');
+    border: 2px solid theme('colors.background');
+  }
+
   .animate-pulse-status {
     animation: pulse-status 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }

@@ -364,8 +364,8 @@
 
       <plugin name="depth_camera_driver" filename="libgazebo_ros_camera.so">
         <ros>
-          <namespace>depth_cam</namespace>
-          
+          <namespace>camera</namespace>
+
           <remapping>custom_camera/image_raw:=image_raw</remapping>
           <remapping>custom_camera/camera_info:=camera_info</remapping>
           

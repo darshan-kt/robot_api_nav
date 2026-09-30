@@ -9,6 +9,25 @@ import { useVelocityCtrl } from '../hooks/useVelocityCtrl';
 import { useCameraStream } from '../hooks/useCameraStream';
 import { GATEWAY_URL } from '../lib/config';
 
+// The LIDAR dial is drawn with the canvas 2D API, which cannot consume
+// utility classes — so these mirror tailwind.config.ts by hand. Kept in one
+// block (rather than inlined down the render loop) so the mapping to
+// colors.liveStrong / colors.faultStrong / colors.textMuted stays checkable.
+const DIAL = {
+    live: '#10b981',        // colors.liveStrong
+    liveFaint: 'rgba(16, 185, 129, 0.1)',
+    liveLabel: 'rgba(16, 185, 129, 0.35)',
+    liveSweep: 'rgba(16, 185, 129, 0.7)',
+    liveWashFrom: 'rgba(16, 185, 129, 0.05)',
+    liveWashTo: 'rgba(16, 185, 129, 0)',
+    returnHit: (alpha: number) => `rgba(244, 63, 94, ${alpha})`, // colors.faultStrong
+    idleText: 'rgba(136, 146, 168, 0.75)',                       // colors.textMuted
+    node: '#ffffff',
+    // 12px floor, matching fontSize.meta — the dial previously drew its range
+    // labels at 9px and its idle message at 11px.
+    labelFont: '12px monospace',
+} as const;
+
 export function RemoteControllerPage() {
     const { showToast } = useToast();
 
@@ -403,9 +422,9 @@ export function RemoteControllerPage() {
             const ppm = maxR / displayMaxM;
 
             // Background range rings with metre labels
-            ctx.strokeStyle = 'rgba(16, 185, 129, 0.1)';
-            ctx.fillStyle = 'rgba(16, 185, 129, 0.35)';
-            ctx.font = '9px monospace';
+            ctx.strokeStyle = DIAL.liveFaint;
+            ctx.fillStyle = DIAL.liveLabel;
+            ctx.font = DIAL.labelFont;
             ctx.textAlign = 'left';
             ctx.lineWidth = 1;
             for (let m = 1; m <= displayMaxM; m++) {
@@ -424,8 +443,8 @@ export function RemoteControllerPage() {
             // Sweep beam (cosmetic)
             sweepAngle = (sweepAngle + 0.04) % (Math.PI * 2);
             const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR);
-            grad.addColorStop(0, 'rgba(16, 185, 129, 0.05)');
-            grad.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+            grad.addColorStop(0, DIAL.liveWashFrom);
+            grad.addColorStop(1, DIAL.liveWashTo);
             ctx.fillStyle = grad;
             ctx.beginPath();
             ctx.moveTo(cx, cy);
@@ -437,7 +456,7 @@ export function RemoteControllerPage() {
             ctx.beginPath();
             ctx.moveTo(cx, cy);
             ctx.lineTo(cx + Math.cos(sweepAngle) * maxR, cy + Math.sin(sweepAngle) * maxR);
-            ctx.strokeStyle = 'rgba(16, 185, 129, 0.7)';
+            ctx.strokeStyle = DIAL.liveSweep;
             ctx.lineWidth = 1.5;
             ctx.stroke();
 
@@ -461,13 +480,13 @@ export function RemoteControllerPage() {
 
                     ctx.beginPath();
                     ctx.arc(ox, oy, 2.2, 0, Math.PI * 2);
-                    ctx.fillStyle = `rgba(244, 63, 94, ${alpha})`;
+                    ctx.fillStyle = DIAL.returnHit(alpha);
                     ctx.fill();
                 }
             } else {
                 // No data — show a hint in the dial
-                ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
-                ctx.font = '11px monospace';
+                ctx.fillStyle = DIAL.idleText;
+                ctx.font = DIAL.labelFont;
                 ctx.textAlign = 'center';
                 ctx.fillText('WAITING FOR /scan …', cx, cy + maxR / 2);
             }
@@ -475,9 +494,9 @@ export function RemoteControllerPage() {
             // Robot centre node
             ctx.beginPath();
             ctx.arc(cx, cy, 7, 0, Math.PI * 2);
-            ctx.fillStyle = '#10b981';
+            ctx.fillStyle = DIAL.live;
             ctx.fill();
-            ctx.strokeStyle = '#ffffff';
+            ctx.strokeStyle = DIAL.node;
             ctx.lineWidth = 1.5;
             ctx.stroke();
 
@@ -487,7 +506,7 @@ export function RemoteControllerPage() {
             ctx.lineTo(cx - 5, cy - 7);
             ctx.lineTo(cx + 5, cy - 7);
             ctx.closePath();
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = DIAL.node;
             ctx.fill();
 
             frameId = requestAnimationFrame(renderRadar);
@@ -566,10 +585,10 @@ export function RemoteControllerPage() {
             onTouchCancel={(e) => { e.preventDefault(); setKeyState(k, false); }}
             onContextMenu={(e) => e.preventDefault()}
             style={{ touchAction: 'none' }}
-            className={`w-10 h-10 rounded-lg flex items-center justify-center border font-bold text-xs transition-all select-none cursor-pointer ${
+            className={`w-tap h-tap rounded-lg flex items-center justify-center border font-bold text-body transition-all duration-fast ease-standard select-none cursor-pointer ${
                 active
-                    ? 'bg-emerald-500 text-background border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)] scale-95'
-                    : 'bg-surface border-border text-textMuted hover:border-emerald-500/50 hover:text-text active:scale-95'
+                    ? 'bg-liveStrong text-background border-live shadow-lg shadow-liveStrong/40 scale-95'
+                    : 'bg-surface border-border text-textMuted hover:border-liveStrong/50 hover:text-text active:scale-95'
             }`}
         >
             {k.toUpperCase()}
@@ -583,10 +602,10 @@ export function RemoteControllerPage() {
                 backTo="/store"
                 title="Remote Controller"
                 icon={Smartphone}
-                iconColor="text-purple-400"
+                iconColor="text-stream"
             />
 
-            <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-8 py-8 md:py-10 grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-8">
+            <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-8 py-8 md:py-10 grid grid-cols-1 lg:grid-cols-[1fr_theme(spacing.rail)] gap-8">
                 {/* Navigation HUD — LIDAR + Camera side by side, each its own
                     panel with independent connection state, sharing one
                     telemetry strip below (position/heading/velocity apply
@@ -595,42 +614,58 @@ export function RemoteControllerPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* LIDAR panel */}
                         <Card hover={false} className="p-6 flex flex-col items-center relative overflow-hidden">
-                            <div className="w-full flex justify-between items-start mb-6">
-                                <div>
-                                    <h2 className="text-base font-bold text-text">LIDAR HUD</h2>
-                                    <p className="text-[10px] font-mono text-textMuted uppercase tracking-widest">
+                            <div className="w-full flex justify-between items-start gap-3 mb-6">
+                                <div className="min-w-0">
+                                    <h2 className="text-title font-bold text-text">LIDAR HUD</h2>
+                                    <p className="text-meta font-mono text-textMuted uppercase tracking-widest">
                                         Laser Scanner
                                     </p>
                                 </div>
-                                <div className="flex flex-col items-end gap-1.5">
+                                <div className="flex flex-col items-end gap-1.5 shrink-0">
                                     <button
                                         onClick={() => setScanUpdateOn(v => !v)}
                                         title="Toggle live LIDAR scan updates (off by default to save robot CPU)"
-                                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide transition-colors cursor-pointer ${
+                                        aria-label="Live LIDAR scan updates"
+                                        aria-pressed={scanUpdateOn}
+                                        className={`tap-target flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-meta font-mono font-bold tracking-wide whitespace-nowrap transition-colors duration-base ease-standard cursor-pointer ${
                                             scanUpdateOn
-                                                ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
-                                                : 'bg-white/5 border-border text-textMuted hover:border-purple-500/40 hover:text-purple-300'
+                                                ? 'bg-streamStrong/20 border-streamStrong/50 text-stream'
+                                                : 'bg-white/5 border-border text-text hover:border-streamStrong/40 hover:text-stream'
                                         }`}
                                     >
-                                        <Radar className="w-3 h-3" />
+                                        <Radar className="w-3 h-3 shrink-0" />
                                         {scanUpdateOn ? 'ON' : 'OFF'}
                                     </button>
-                                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide ${
-                                        lidarLive ? 'animate-pulse bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-rose-500/20 border-rose-500/50 text-rose-400'
-                                    }`}>
-                                        <div className={`w-1.5 h-1.5 rounded-full ${lidarLive ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                                    <div
+                                        role="status"
+                                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-meta font-mono font-bold tracking-wide whitespace-nowrap ${
+                                            lidarLive ? 'bg-liveStrong/20 border-liveStrong/50 text-live' : 'bg-faultStrong/20 border-faultStrong/50 text-fault'
+                                        }`}
+                                    >
+                                        <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${lidarLive ? 'bg-live animate-pulse' : 'bg-fault'}`} />
                                         {lidarLive ? 'LIVE' : 'OFFLINE'}
                                     </div>
                                 </div>
                             </div>
 
                             {/* Radar sweeping feed */}
-                            <div className="relative w-full aspect-square rounded-full border border-emerald-500/20 bg-black/40 shadow-inner flex items-center justify-center p-2">
-                                <canvas ref={radarCanvasRef} width={400} height={400} className="w-full h-full rounded-full" />
-                                <div className="absolute bottom-6 left-6 font-mono text-[9px] text-emerald-400 bg-emerald-950/40 px-2.5 py-1.5 rounded-lg border border-emerald-500/20">
+                            <div className="relative w-full aspect-square rounded-full border border-liveStrong/20 bg-background/60 shadow-inner flex items-center justify-center p-2">
+                                <canvas
+                                    ref={radarCanvasRef}
+                                    width={400}
+                                    height={400}
+                                    className="w-full h-full rounded-full"
+                                    role="img"
+                                    aria-label={
+                                        scan
+                                            ? `LIDAR scan: ${scan.ranges.filter(r => r !== null).length} of ${scan.ranges.length} beams returning, maximum range ${scan.range_max.toFixed(1)} metres`
+                                            : 'LIDAR scan dial — no scan data received'
+                                    }
+                                />
+                                <div className="absolute bottom-6 left-6 font-mono text-meta text-live bg-background/80 px-2.5 py-1.5 rounded-lg border border-liveStrong/20">
                                     {scan ? `${scan.ranges.filter(r => r !== null).length}/${scan.ranges.length} BEAMS` : 'SCAN: — '}
                                 </div>
-                                <div className="absolute bottom-6 right-6 font-mono text-[9px] text-emerald-400 bg-emerald-950/40 px-2.5 py-1.5 rounded-lg border border-emerald-500/20">
+                                <div className="absolute bottom-6 right-6 font-mono text-meta text-live bg-background/80 px-2.5 py-1.5 rounded-lg border border-liveStrong/20">
                                     {scan ? `RANGE: ${scan.range_max.toFixed(1)}m` : 'RANGE: —'}
                                 </div>
                             </div>
@@ -646,56 +681,65 @@ export function RemoteControllerPage() {
                             an operator relying on this for situational
                             awareness needs the whole frame, not a crop. */}
                         <Card hover={false} className="p-6 flex flex-col items-center relative overflow-hidden">
-                            <div className="w-full flex justify-between items-start mb-6">
-                                <div>
-                                    <h2 className="text-base font-bold text-text">Camera Feed</h2>
-                                    <p className="text-[10px] font-mono text-textMuted uppercase tracking-widest">
+                            <div className="w-full flex justify-between items-start gap-3 mb-6">
+                                <div className="min-w-0">
+                                    <h2 className="text-title font-bold text-text">Camera Feed</h2>
+                                    <p className="text-meta font-mono text-textMuted uppercase tracking-widest">
                                         WebRTC · /camera
                                     </p>
                                 </div>
-                                <div className="flex flex-col items-end gap-1.5">
+                                <div className="flex flex-col items-end gap-1.5 shrink-0">
                                     <button
                                         onClick={() => setCameraOn(v => !v)}
                                         title="Toggle the live WebRTC camera feed (off by default to save robot CPU)"
-                                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide transition-colors cursor-pointer ${
+                                        aria-label="Live camera feed"
+                                        aria-pressed={cameraOn}
+                                        className={`tap-target flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-meta font-mono font-bold tracking-wide whitespace-nowrap transition-colors duration-base ease-standard cursor-pointer ${
                                             cameraOn
-                                                ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
-                                                : 'bg-white/5 border-border text-textMuted hover:border-purple-500/40 hover:text-purple-300'
+                                                ? 'bg-streamStrong/20 border-streamStrong/50 text-stream'
+                                                : 'bg-white/5 border-border text-text hover:border-streamStrong/40 hover:text-stream'
                                         }`}
                                     >
-                                        {cameraOn ? <Video className="w-3 h-3" /> : <VideoOff className="w-3 h-3" />}
+                                        {cameraOn ? <Video className="w-3 h-3 shrink-0" /> : <VideoOff className="w-3 h-3 shrink-0" />}
                                         {cameraOn ? 'ON' : 'OFF'}
                                     </button>
-                                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wide ${
-                                        cameraConnected ? 'animate-pulse bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-rose-500/20 border-rose-500/50 text-rose-400'
-                                    }`}>
-                                        <div className={`w-1.5 h-1.5 rounded-full ${cameraConnected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                                    <div
+                                        role="status"
+                                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-meta font-mono font-bold tracking-wide whitespace-nowrap ${
+                                            cameraConnected ? 'bg-liveStrong/20 border-liveStrong/50 text-live' : 'bg-faultStrong/20 border-faultStrong/50 text-fault'
+                                        }`}
+                                    >
+                                        <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${cameraConnected ? 'bg-live animate-pulse' : 'bg-fault'}`} />
                                         {cameraConnected ? 'LIVE' : 'OFFLINE'}
                                     </div>
                                 </div>
                             </div>
 
                             <div className="relative w-full aspect-square flex items-center justify-center">
-                                <div className="relative w-full aspect-[4/3] rounded-xl border border-purple-500/20 bg-black shadow-inner overflow-hidden flex items-center justify-center">
+                                <div className="relative w-full aspect-[4/3] rounded-xl border border-streamStrong/20 bg-black shadow-inner overflow-hidden flex items-center justify-center">
                                     <video
                                         ref={videoRef}
                                         autoPlay
                                         muted
                                         playsInline
+                                        aria-label="Live robot camera feed"
                                         className="w-full h-full object-contain"
                                     />
                                     {!cameraConnected && (
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70">
+                                        <div
+                                            role="status"
+                                            className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70"
+                                        >
                                             <VideoOff className="w-7 h-7 text-textMuted" />
-                                            <span className="font-mono text-[10px] text-textMuted uppercase tracking-widest px-4 text-center">
+                                            <span className="font-mono text-meta text-textMuted uppercase tracking-widest px-4 text-center">
                                                 {!cameraOn ? 'Feed Off' : cameraConnecting ? 'Negotiating…' : 'No Signal'}
                                             </span>
                                         </div>
                                     )}
-                                    <div className="absolute bottom-3 left-3 font-mono text-[9px] text-purple-300 bg-purple-950/50 px-2.5 py-1.5 rounded-lg border border-purple-500/20">
+                                    <div className="absolute bottom-3 left-3 font-mono text-meta text-stream bg-background/80 px-2.5 py-1.5 rounded-lg border border-streamStrong/20">
                                         RGB · 320×240
                                     </div>
-                                    <div className="absolute bottom-3 right-3 font-mono text-[9px] text-purple-300 bg-purple-950/50 px-2.5 py-1.5 rounded-lg border border-purple-500/20">
+                                    <div className="absolute bottom-3 right-3 font-mono text-meta text-stream bg-background/80 px-2.5 py-1.5 rounded-lg border border-streamStrong/20">
                                         WEBRTC
                                     </div>
                                 </div>
@@ -707,28 +751,28 @@ export function RemoteControllerPage() {
                         whole, not to either feed above */}
                     <Card hover={false} className="p-6">
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="bg-black/30 px-4 py-3 rounded-xl border border-white/5 text-center">
-                                <span className="text-[10px] font-mono text-textMuted uppercase">Position</span>
-                                <p className="text-sm font-mono font-bold text-text mt-1">
+                            <div className="bg-background/50 px-4 py-3 rounded-xl border border-white/5 text-center">
+                                <span className="text-meta font-mono text-textMuted uppercase">Position</span>
+                                <p className="text-body sm:text-readout font-mono font-bold text-text mt-1 tabular-nums whitespace-nowrap">
                                     {connected && robotState
                                         ? `${robotState.x.toFixed(1)}, ${robotState.y.toFixed(1)}`
                                         : '—, —'}
                                 </p>
                             </div>
-                            <div className="bg-black/30 px-4 py-3 rounded-xl border border-white/5 text-center">
-                                <span className="text-[10px] font-mono text-textMuted uppercase">Heading</span>
-                                <p className="text-sm font-mono font-bold text-text mt-1">
+                            <div className="bg-background/50 px-4 py-3 rounded-xl border border-white/5 text-center">
+                                <span className="text-meta font-mono text-textMuted uppercase">Heading</span>
+                                <p className="text-body sm:text-readout font-mono font-bold text-text mt-1 tabular-nums whitespace-nowrap">
                                     {connected && robotState ? `${(robotState.theta * 180 / Math.PI).toFixed(0)}°` : '—'}
                                 </p>
                                 {latency !== null && <Badge type="blue" className="mt-1.5">{latency} ms</Badge>}
                             </div>
-                            <div className="bg-black/30 px-4 py-3 rounded-xl border border-white/5 text-center">
-                                <span className="text-[10px] font-mono text-textMuted uppercase">Linear Velocity</span>
-                                <p className="text-lg font-mono font-bold text-emerald-400 mt-0.5">{linearVel.toFixed(2)} m/s</p>
+                            <div className="bg-background/50 px-4 py-3 rounded-xl border border-white/5 text-center">
+                                <span className="text-meta font-mono text-textMuted uppercase">Linear Velocity</span>
+                                <p className="text-body sm:text-readout font-mono font-bold text-live mt-0.5 tabular-nums whitespace-nowrap">{linearVel.toFixed(2)} m/s</p>
                             </div>
-                            <div className="bg-black/30 px-4 py-3 rounded-xl border border-white/5 text-center">
-                                <span className="text-[10px] font-mono text-textMuted uppercase">Angular Velocity</span>
-                                <p className="text-lg font-mono font-bold text-emerald-400 mt-0.5">{angularVel.toFixed(2)} rad/s</p>
+                            <div className="bg-background/50 px-4 py-3 rounded-xl border border-white/5 text-center">
+                                <span className="text-meta font-mono text-textMuted uppercase">Angular Velocity</span>
+                                <p className="text-body sm:text-readout font-mono font-bold text-live mt-0.5 tabular-nums whitespace-nowrap">{angularVel.toFixed(2)} rad/s</p>
                             </div>
                         </div>
                     </Card>
@@ -738,12 +782,12 @@ export function RemoteControllerPage() {
                 <div className="space-y-6">
                     {/* Velocity limits */}
                     <Card hover={false} className="p-6">
-                        <h3 className="text-xs font-mono font-bold uppercase tracking-widest text-textMuted mb-6">Drive Limit Controls</h3>
+                        <h2 className="text-title font-bold text-text mb-6">Drive Limit Controls</h2>
                         <div className="space-y-6">
                             <div>
-                                <div className="flex justify-between text-xs font-mono mb-2">
-                                    <span className="text-textMuted">MAX LINEAR SPEED</span>
-                                    <span className="text-emerald-400 font-bold">{maxLinearSpeed.toFixed(1)} m/s</span>
+                                <div className="flex justify-between text-meta font-mono mb-2">
+                                    <span id="max-linear-speed-label" className="text-textMuted">MAX LINEAR SPEED</span>
+                                    <span className="text-live font-bold tabular-nums">{maxLinearSpeed.toFixed(1)} m/s</span>
                                 </div>
                                 <input
                                     type="range"
@@ -752,14 +796,16 @@ export function RemoteControllerPage() {
                                     step="0.05"
                                     value={maxLinearSpeed}
                                     onChange={(e) => setMaxLinearSpeed(parseFloat(e.target.value))}
-                                    className="w-full accent-emerald-500 bg-black/40 h-1.5 rounded-lg appearance-none cursor-pointer border border-white/5"
+                                    aria-labelledby="max-linear-speed-label"
+                                    aria-valuetext={`${maxLinearSpeed.toFixed(2)} metres per second`}
+                                    className="control-range"
                                 />
                             </div>
 
                             <div>
-                                <div className="flex justify-between text-xs font-mono mb-2">
-                                    <span className="text-textMuted">MAX TURN RATE</span>
-                                    <span className="text-emerald-400 font-bold">{maxAngularSpeed.toFixed(1)} rad/s</span>
+                                <div className="flex justify-between text-meta font-mono mb-2">
+                                    <span id="max-turn-rate-label" className="text-textMuted">MAX TURN RATE</span>
+                                    <span className="text-live font-bold tabular-nums">{maxAngularSpeed.toFixed(1)} rad/s</span>
                                 </div>
                                 <input
                                     type="range"
@@ -768,7 +814,9 @@ export function RemoteControllerPage() {
                                     step="0.05"
                                     value={maxAngularSpeed}
                                     onChange={(e) => setMaxAngularSpeed(parseFloat(e.target.value))}
-                                    className="w-full accent-emerald-500 bg-black/40 h-1.5 rounded-lg appearance-none cursor-pointer border border-white/5"
+                                    aria-labelledby="max-turn-rate-label"
+                                    aria-valuetext={`${maxAngularSpeed.toFixed(2)} radians per second`}
+                                    className="control-range"
                                 />
                             </div>
                         </div>
@@ -776,18 +824,21 @@ export function RemoteControllerPage() {
 
                     {/* Dual Driving Controllers (Keyboard WASD visual + Virtual Joystick) */}
                     <Card hover={false} className="p-6 flex flex-col gap-6 items-center">
-                        <div className="w-full flex items-center justify-between">
-                            <h3 className="text-xs font-mono font-bold uppercase tracking-widest text-textMuted">Steering Interface</h3>
-                            <div className={`flex items-center gap-1.5 text-[9px] font-mono font-bold ${ctrlConnected ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                <div className={`w-1.5 h-1.5 rounded-full ${ctrlConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+                        <div className="w-full flex items-center justify-between gap-3">
+                            <h2 className="text-title font-bold text-text">Steering Interface</h2>
+                            <div
+                                role="status"
+                                className={`flex items-center gap-1.5 text-meta font-mono font-bold whitespace-nowrap ${ctrlConnected ? 'text-live' : 'text-fault'}`}
+                            >
+                                <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${ctrlConnected ? 'bg-live animate-pulse' : 'bg-fault'}`} />
                                 {ctrlConnected ? 'CTRL LINK' : 'CTRL OFFLINE'}
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-[340px] md:max-w-none items-center justify-center">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-stack md:max-w-none items-center justify-center">
                             {/* Visual WASD Keyboard */}
-                            <div className="flex flex-col items-center justify-center bg-black/20 p-4 rounded-2xl border border-white/5">
-                                <span className="text-[10px] font-mono text-textMuted uppercase mb-4">Keyboard teleop</span>
+                            <div className="flex flex-col items-center justify-center bg-background/40 p-4 rounded-2xl border border-white/5">
+                                <span className="text-meta font-mono text-textMuted uppercase mb-4">Keyboard teleop</span>
                                 
                                 <div className="space-y-2">
                                     {/* W key — forward */}
@@ -804,25 +855,25 @@ export function RemoteControllerPage() {
                             </div>
 
                             {/* Virtual Joystick */}
-                            <div className="flex flex-col items-center justify-center bg-black/20 p-4 rounded-2xl border border-white/5">
-                                <span className="text-[10px] font-mono text-textMuted uppercase mb-4">Touch Joystick</span>
-                                
+                            <div className="flex flex-col items-center justify-center bg-background/40 p-4 rounded-2xl border border-white/5">
+                                <span className="text-meta font-mono text-textMuted uppercase mb-4">Touch Joystick</span>
+
                                 <div
                                     ref={joystickContainerRef}
                                     onMouseDown={handleJoystickStart}
                                     onTouchStart={handleJoystickStart}
-                                    className="w-32 h-32 rounded-full bg-[#1e293b]/40 border border-white/10 backdrop-blur-md relative flex items-center justify-center cursor-grab active:cursor-grabbing shadow-inner"
+                                    className="w-32 h-32 rounded-full bg-surface/40 border border-white/10 backdrop-blur-md relative flex items-center justify-center cursor-grab active:cursor-grabbing shadow-inner"
                                 >
                                     {/* Inner concentric ring */}
                                     <div className="w-16 h-16 rounded-full border border-white/5 flex items-center justify-center" />
-                                    
+
                                     {/* Draggable Knob */}
                                     <div
                                         ref={joystickKnobRef}
                                         style={{
                                             transform: `translate(${joystickPos.x}px, ${joystickPos.y}px)`
                                         }}
-                                        className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 border border-emerald-300 flex items-center justify-center absolute shadow-[0_4px_15px_rgba(16,185,129,0.4)] transition-all duration-75 pointer-events-none"
+                                        className="w-tap h-tap rounded-full bg-gradient-to-br from-live to-liveStrong border border-live flex items-center justify-center absolute shadow-lg shadow-liveStrong/40 transition-transform duration-fast ease-standard pointer-events-none"
                                     >
                                         <div className="w-3.5 h-3.5 rounded-full bg-white/20" />
                                     </div>
@@ -833,17 +884,25 @@ export function RemoteControllerPage() {
 
                     {/* Actuator control & Dock buttons */}
                     <Card hover={false} className="p-6">
-                        <h3 className="text-xs font-mono font-bold uppercase tracking-widest text-textMuted mb-6">Robotic Actuators</h3>
+                        <h2 className="text-title font-bold text-text mb-6">Robotic Actuators</h2>
 
                         <div className="space-y-4">
                             {/* Lift Slider */}
                             <div>
-                                <div className="flex justify-between text-[10px] font-mono mb-2">
-                                    <span className="text-textMuted">LIFT EXTENSION</span>
-                                    <span className="text-purple-400 font-bold">{liftLevel}%</span>
+                                <div className="flex justify-between text-meta font-mono mb-2">
+                                    <span id="lift-extension-label" className="text-textMuted">LIFT EXTENSION</span>
+                                    <span className="text-stream font-bold tabular-nums">{liftLevel}%</span>
                                 </div>
-                                <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden border border-white/5">
-                                    <div className="h-full bg-purple-500 transition-all duration-300" style={{ width: `${liftLevel}%` }} />
+                                <div
+                                    role="progressbar"
+                                    aria-labelledby="lift-extension-label"
+                                    aria-valuenow={liftLevel}
+                                    aria-valuemin={0}
+                                    aria-valuemax={100}
+                                    aria-valuetext={`${liftLevel} percent extended`}
+                                    className="w-full h-1.5 bg-background/60 rounded-full overflow-hidden border border-white/5"
+                                >
+                                    <div className="h-full bg-streamStrong transition-all duration-slow ease-standard" style={{ width: `${liftLevel}%` }} />
                                 </div>
                             </div>
 
@@ -851,7 +910,7 @@ export function RemoteControllerPage() {
                             <div className="grid grid-cols-2 gap-4">
                                 <Button
                                     variant="outline"
-                                    className="text-xs"
+                                    className="text-meta min-h-tap whitespace-nowrap"
                                     onClick={handleRaiseLift}
                                     disabled={liftLevel >= 100 || isLifting !== null}
                                     icon={ArrowUp}
@@ -860,7 +919,7 @@ export function RemoteControllerPage() {
                                 </Button>
                                 <Button
                                     variant="outline"
-                                    className="text-xs"
+                                    className="text-meta min-h-tap whitespace-nowrap"
                                     onClick={handleLowerLift}
                                     disabled={liftLevel <= 0 || isLifting !== null}
                                     icon={ArrowDown}
@@ -875,7 +934,7 @@ export function RemoteControllerPage() {
                             <div className="grid grid-cols-2 gap-4">
                                 <Button
                                     variant="outline"
-                                    className="text-xs font-mono tracking-wider"
+                                    className="text-meta min-h-tap font-mono tracking-wider whitespace-nowrap"
                                     onClick={() => showToast('Command sent: Return to Base.', 'info')}
                                     icon={Home}
                                 >
@@ -883,7 +942,7 @@ export function RemoteControllerPage() {
                                 </Button>
                                 <Button
                                     variant="outline"
-                                    className="text-xs font-mono tracking-wider"
+                                    className="text-meta min-h-tap font-mono tracking-wider whitespace-nowrap"
                                     onClick={() => showToast('Docking sequence initiated.', 'info')}
                                     icon={BatteryCharging}
                                 >
@@ -891,10 +950,12 @@ export function RemoteControllerPage() {
                                 </Button>
                             </div>
 
-                            {/* Emergency stop */}
+                            {/* Emergency stop — the one destructive control on
+                                the page, so it gets the full tap height rather
+                                than the 34px the shared Button default gave it. */}
                             <Button
                                 variant="danger"
-                                className="w-full mt-4 font-bold tracking-widest text-xs"
+                                className="w-full mt-4 min-h-tap font-bold tracking-widest text-body !bg-faultDeep !border-faultDeep"
                                 onClick={triggerEStop}
                                 icon={ShieldAlert}
                             >
