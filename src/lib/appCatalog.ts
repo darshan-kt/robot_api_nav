@@ -14,7 +14,7 @@
  * Adding a section later should be an entry here, not a new component.
  */
 import {
-    LayoutDashboard, OctagonX, Smartphone, Route, CircuitBoard, Eye,
+    LayoutDashboard, OctagonX, Smartphone, Route, CircuitBoard,
     Camera, Radar, Compass, Waves,
     ScanLine, Crosshair, Footprints, Shield,
     Sigma, Activity, Gauge, Network, MessageSquare, Brain,
@@ -150,19 +150,6 @@ export const SECTIONS: SectionDef[] = [
                     },
                 ],
             },
-            {
-                title: 'Interactive',
-                apps: [
-                    {
-                        id: 'hardware-sensors-lab',
-                        title: 'Hardware & sensors lab',
-                        blurb: 'Tune RPLIDAR A2 and Astra Pro parameters against a simulated feed and read the verified setup path.',
-                        route: '/hardware-sensors-lab',
-                        icon: CircuitBoard,
-                        provenance: 'SIMULATED DATA',
-                    },
-                ],
-            },
         ],
     },
     {
@@ -207,19 +194,6 @@ export const SECTIONS: SectionDef[] = [
                     },
                 ],
             },
-            {
-                title: 'Interactive',
-                apps: [
-                    {
-                        id: 'visual-tracking-lab',
-                        title: 'Visual tracking lab',
-                        blurb: 'Calibrate HSV thresholds live and watch the pipeline compute steering.',
-                        route: '/visual-tracking-lab',
-                        icon: Eye,
-                        provenance: 'SIMULATED DATA',
-                    },
-                ],
-            },
         ],
     },
     {
@@ -230,7 +204,6 @@ export const SECTIONS: SectionDef[] = [
         groups: [
             {
                 title: 'Statistical distributions',
-                description: 'Each page names the subsystem in this codebase that relies on the assumption.',
                 apps: [
                     {
                         id: 'uniform',
