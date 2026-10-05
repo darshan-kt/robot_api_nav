@@ -23,6 +23,13 @@
     --c-media-fg: 232 236 244;
     --c-media-live: 52 211 153;
     --c-media-stream: 192 132 252;
+    /* Fault and caution ON the media surface. The page-level `fault` and
+       `warning` tokens invert with the theme — in light they are a dark red
+       and a dark brown, which on this permanently-dark surface read as holes.
+       These two hold steady with the rest of the media palette: 7.0:1 and
+       10.3:1 on --c-media-bg. */
+    --c-media-fault: 251 113 133;
+    --c-media-warn: 255 176 32;
   }
 
   /* ── Dark (default) — unchanged from the pre-theme palette ──────────── */

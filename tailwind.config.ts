@@ -62,6 +62,8 @@ const config: Config = {
                     fg: 'rgb(var(--c-media-fg) / <alpha-value>)',
                     live: 'rgb(var(--c-media-live) / <alpha-value>)',
                     stream: 'rgb(var(--c-media-stream) / <alpha-value>)',
+                    fault: 'rgb(var(--c-media-fault) / <alpha-value>)',
+                    warn: 'rgb(var(--c-media-warn) / <alpha-value>)',
                 },
 
                 // Categorical ramp for Card/Badge, whose `theme`/`type` props

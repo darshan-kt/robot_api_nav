@@ -1,4 +1,8 @@
+import { Link } from 'react-router-dom';
 import { AppPage, Panel } from '../../components/layout/AppPage';
+import { LivePanel } from '../../components/layout/LivePanel';
+import { ContextWindow } from '../../components/ui/AgentViz';
+import { livePromptContext } from '../../lib/liveFrames';
 
 const PATTERNS = [
     {
@@ -51,6 +55,102 @@ export function PromptingPage() {
                 { label: 'Implemented', value: 'No — design only' },
             ]}
         >
+            <Panel title="Which layer this is">
+                <p className="text-body text-textMuted leading-relaxed max-w-3xl mb-5">
+                    There are three places to stop a robot doing something stupid, and they are not
+                    interchangeable. Read this page knowing which one it is about — the middle one, the weakest
+                    of the three, and the only one that cannot be tested by running it once.
+                </p>
+
+                <ol className="space-y-3 list-none p-0 m-0 max-w-3xl">
+                    {[
+                        {
+                            layer: 'The tool surface',
+                            strength: 'Bounds what is possible',
+                            d: 'A capability absent from the schema cannot be called however the model is addressed. Mechanical, testable, and the subject of the other page in this section.',
+                            tone: 'live',
+                        },
+                        {
+                            layer: 'The prompt',
+                            strength: 'Reduces what is likely',
+                            d: 'Narrows the distribution of calls the model makes inside that boundary. Degrades silently, cannot be unit-tested, and is one jailbreak from absent. This page.',
+                            tone: 'warning',
+                        },
+                        {
+                            layer: 'The hardware',
+                            strength: 'Bounds the worst case',
+                            d: 'E-Stop latch, velocity deadman, speed ceiling. Holds regardless of what the model emitted or what the prompt said, because nothing above it can address it.',
+                            tone: 'live',
+                        },
+                    ].map((l, i) => (
+                        <li key={l.layer}
+                            className={`rounded-xl border p-4 ${l.tone === 'warning' ? 'border-warning/40 bg-warning/5' : 'border-border/60 bg-card/60'}`}>
+                            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-1">
+                                <span className="text-meta font-mono font-bold text-live">{i + 1}</span>
+                                <span className={`text-body font-bold ${l.tone === 'warning' ? 'text-warning' : 'text-text'}`}>{l.layer}</span>
+                                <span className="text-meta font-mono uppercase tracking-widest text-textMuted">{l.strength}</span>
+                            </div>
+                            <p className="text-body text-textMuted leading-relaxed m-0">{l.d}</p>
+                        </li>
+                    ))}
+                </ol>
+
+                <p className="text-body text-textMuted leading-relaxed mt-5 max-w-3xl">
+                    The ordering matters more than the contents. Anything that must not happen belongs in layer
+                    one or three; a rule that only exists in layer two is a preference written in a language the
+                    system is free to reinterpret. See{' '}
+                    <Link to="/ai/ros2-mcp" className="text-live underline underline-offset-2 hover:text-liveStrong transition-colors duration-base ease-standard">
+                        ROS 2 MCP design
+                    </Link>{' '}for layers one and three.
+                </p>
+            </Panel>
+
+            <LivePanel
+                hz={2}
+                rateLabel="one block per frame"
+                caveat="An illustration of how a turn is assembled, not a model run. Nothing here called a model; the blocks are a pure function of the frame index, so pausing and stepping replays them exactly."
+                readout={tick => {
+                    const f = livePromptContext(tick);
+                    return (
+                        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 m-0">
+                            {[
+                                { k: 'Blocks', v: `${f.shown} / ${f.total}`, bad: false },
+                                { k: 'Instruction channel', v: '2 blocks', bad: false },
+                                { k: 'Data channel', v: `${f.blocks.filter(b => b.channel === 'data').length} blocks`, bad: false },
+                                { k: 'Imperatives in data', v: f.hostileSeen ? '1 — quarantined' : 'none yet', bad: f.hostileSeen },
+                            ].map(x => (
+                                <div key={x.k}
+                                    className={`rounded-xl border px-4 py-3 ${x.bad ? 'border-warning/40 bg-warning/5' : 'border-border/60 bg-card/60'}`}>
+                                    <dt className="text-meta font-mono uppercase tracking-widest text-textMuted mb-1">{x.k}</dt>
+                                    <dd className={`text-body font-mono font-bold m-0 break-words ${x.bad ? 'text-warning' : 'text-text'}`}>
+                                        {x.v}
+                                    </dd>
+                                </div>
+                            ))}
+                        </dl>
+                    );
+                }}
+            >
+                {tick => {
+                    const f = livePromptContext(tick);
+                    return <ContextWindow blocks={f.blocks} shown={f.shown} total={f.total} />;
+                }}
+            </LivePanel>
+
+            <Panel title="Why that fifth block is the whole problem">
+                <p className="text-body text-textMuted leading-relaxed max-w-3xl">
+                    Watch where the camera's text lands. By the time the model sees it, the operator's
+                    instruction and the OCR output are the same kind of thing — a run of tokens in one window —
+                    and nothing about being read off a wall marks it as less authoritative than the system
+                    prompt. The <span className="font-mono">&lt;obs&gt;</span> boundary is the entire defence,
+                    and it is a convention the model is asked to honour rather than a mechanism that enforces
+                    anything. That is worth saying plainly in a POC: a printed sign is a prompt injection with
+                    a physical delivery mechanism, the robot will drive up to it and read it, and the reason
+                    this is survivable is not the tagging — it is that the model could not have driven anywhere
+                    the tool surface did not already allow.
+                </p>
+            </Panel>
+
             <Panel title="Patterns">
                 <ul className="space-y-5 list-none p-0 m-0">
                     {PATTERNS.map((p, i) => (

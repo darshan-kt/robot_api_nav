@@ -22,7 +22,9 @@ export function SectionPage() {
 const FOOTERS: Record<string, React.ReactNode> = {
     control: <ControlAuthority />,
     sensors: <SensorCoverage />,
+    motion: <MotionProgression />,
     projects: <ProjectRisk />,
+    ai: <AiReadiness />,
 };
 
 /**
@@ -229,6 +231,200 @@ function SensorCoverage() {
                     three independent opinions.
                 </p>
             </div>
+        </section>
+    );
+}
+
+/**
+ * Three tiles about one motor read as three difficulty levels, which is the
+ * wrong idea. They are three levels of knowledge: the question each app
+ * answers is not "how fast can it go" but "what is the robot entitled to
+ * claim", and that is what the fourth column tracks.
+ */
+function MotionProgression() {
+    const rows = [
+        {
+            app: 'Single motor',
+            command: 'A duty cycle, 0 – 100%',
+            knows: 'Nothing — no sensor on the shaft',
+            publishes: 'A speed computed from the duty',
+            honest: false,
+            gap: 'Cannot tell stalled from stopped',
+        },
+        {
+            app: 'Dual motors',
+            command: 'A Twist — v and ω',
+            knows: 'Nothing — still no sensor on either shaft',
+            publishes: 'The wheel speeds it asked for',
+            honest: false,
+            gap: 'Drives an arc and reports a straight line',
+        },
+        {
+            app: 'Motor with encoders',
+            command: 'A Twist — v and ω',
+            knows: 'Wheel speed and distance to 0.137 mm',
+            publishes: '/joint_states and /odom, measured',
+            honest: true,
+            gap: 'A spinning wheel still counts as progress',
+        },
+    ];
+
+    return (
+        <section>
+            <h2 className="text-title font-bold text-text mb-2">What each one adds</h2>
+            <p className="text-body text-textMuted leading-relaxed mb-5 max-w-3xl">
+                The same motor appears in all three. What changes is not the hardware's capability but how much of
+                its behaviour the robot can observe — and therefore what it is allowed to tell the rest of the stack.
+            </p>
+
+            <div className="relative overflow-x-auto">
+                <table className="w-full min-w-[760px] border-collapse">
+                    <caption className="sr-only">
+                        The three motion-kit apps compared by what they command, what they can measure, what they
+                        publish and what remains unsolved
+                    </caption>
+                    <thead>
+                        <tr>
+                            {['App', 'What you command', 'What it can measure', 'What it publishes', 'Still broken'].map(h => (
+                                <th key={h} scope="col"
+                                    className="text-left text-meta font-mono uppercase tracking-widest text-textMuted pb-3 pr-4">
+                                    {h}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map(r => (
+                            <tr key={r.app} className="border-t border-border/40 align-top">
+                                <th scope="row" className="text-left py-3 pr-4">
+                                    <span className="block text-body font-medium text-text whitespace-nowrap">{r.app}</span>
+                                    <span className={`text-meta font-mono uppercase tracking-widest ${r.honest ? 'text-live' : 'text-warning'}`}>
+                                        {r.honest ? 'open loop → closed' : 'open loop'}
+                                    </span>
+                                </th>
+                                <td className="py-3 pr-4 text-body text-textMuted">{r.command}</td>
+                                <td className="py-3 pr-4 text-body text-textMuted">{r.knows}</td>
+                                <td className="py-3 pr-4 text-body text-textMuted">
+                                    <span className={r.honest ? 'text-live' : 'text-warning'}>{r.publishes}</span>
+                                </td>
+                                <td className="py-3 pr-4 text-body text-textMuted">{r.gap}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            <p className="text-body text-textMuted leading-relaxed mt-6 max-w-3xl">
+                The first two rows publish a command on a topic whose type means measurement, which is the part worth
+                being annoyed about: both are indistinguishable from the third row to every subscriber downstream, and
+                both are wrong. Adding the encoder does not make the robot faster or smoother — it makes the topic
+                true, and only then does anything above it, odometry through to Nav2, rest on something real. Note
+                that the last column never empties. Closing the loop around the motor bounds what the motor can lie
+                about; it says nothing about the wheel, and the wheel is what touches the floor.
+            </p>
+        </section>
+    );
+}
+
+/**
+ * The section mixes two very different kinds of page, and a viewer who does
+ * not notice will leave believing an MCP server exists. Three of these are
+ * exercises that run on the lab's real hardware this afternoon; two describe a
+ * system with no server, no model and no wiring. Stating which is which is the
+ * honest thing on a deck as well as the useful one — the question a room will
+ * ask about the last two rows is "is it built", and the answer should already
+ * be on the page.
+ */
+function AiReadiness() {
+    const rows = [
+        {
+            app: 'Uniform',
+            kind: 'lab project',
+            describes: 'The prior AMCL scatters particles with, measured by kidnapping the robot',
+            status: 'Runs today — TurtleBot3, RPLIDAR A2, a saved map',
+            built: true,
+        },
+        {
+            app: 'Exponential',
+            kind: 'lab project',
+            describes: 'Reconnect backoff, measured by pulling the broker and watching the fleet stampede',
+            status: 'Runs today — the bridge reconnect path',
+            built: true,
+        },
+        {
+            app: 'Normal (Gaussian)',
+            kind: 'lab project',
+            describes: 'Stopping accuracy, measured over fifty runs at a 2.00 m target',
+            status: 'Runs today — σ comes out of the tape measure',
+            built: true,
+        },
+        {
+            app: 'ROS 2 MCP design',
+            kind: 'design draft',
+            describes: 'Which tools a model would be allowed to call, and what sits below it that none can reach',
+            status: 'Not built — no server, no model, nothing wired',
+            built: false,
+        },
+        {
+            app: 'Prompting robotics',
+            kind: 'design draft',
+            describes: 'Prompt patterns for that same model, and the probes that would test them',
+            status: 'Not built — five probes specified, none run',
+            built: false,
+        },
+    ];
+
+    return (
+        <section>
+            <h2 className="text-title font-bold text-text mb-2">What runs, and what is only drawn</h2>
+            <p className="text-body text-textMuted leading-relaxed mb-5 max-w-3xl">
+                Two kinds of page sit in this section and they carry very different weight. Three are
+                exercises against the lab's real hardware. Two are proposals for a system that does not exist.
+            </p>
+
+            <div className="relative overflow-x-auto">
+                <table className="w-full min-w-[760px] border-collapse">
+                    <caption className="sr-only">
+                        The five AI and robotics pages, what each describes, and whether it is built
+                    </caption>
+                    <thead>
+                        <tr>
+                            {['App', 'What it describes', 'Status'].map(h => (
+                                <th key={h} scope="col"
+                                    className="text-left text-meta font-mono uppercase tracking-widest text-textMuted pb-3 pr-4">
+                                    {h}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map(r => (
+                            <tr key={r.app} className="border-t border-border/40 align-top">
+                                <th scope="row" className="text-left py-3 pr-4">
+                                    <span className="block text-body font-medium text-text whitespace-nowrap">{r.app}</span>
+                                    <span className={`text-meta font-mono uppercase tracking-widest ${r.built ? 'text-live' : 'text-warning'}`}>
+                                        {r.kind}
+                                    </span>
+                                </th>
+                                <td className="py-3 pr-4 text-body text-textMuted">{r.describes}</td>
+                                <td className="py-3 pr-4 text-body">
+                                    <span className={r.built ? 'text-textMuted' : 'text-warning'}>{r.status}</span>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            <p className="text-body text-textMuted leading-relaxed mt-6 max-w-3xl">
+                The last two rows are worth presenting together and in order, because they are one argument cut
+                in half. The MCP page decides what a model is <em>able</em> to do — a mechanical boundary, a
+                list, testable by reading it. The prompting page tries to reduce how often it does something
+                foolish <em>inside</em> that boundary, which is a weaker kind of work with no guarantee attached.
+                Taken alone either one reads as naive. Taken together the claim is the defensible one: the
+                prompt is not load-bearing, the tool surface is, and the hardware underneath both is what
+                actually bounds the worst case.
+            </p>
         </section>
     );
 }

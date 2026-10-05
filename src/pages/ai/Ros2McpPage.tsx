@@ -1,11 +1,15 @@
+import { Link } from 'react-router-dom';
 import { AppPage, Panel } from '../../components/layout/AppPage';
 import { Figure, GatedArchitecture } from '../../components/ui/Viz';
+import { LivePanel } from '../../components/layout/LivePanel';
+import { GateTrace } from '../../components/ui/AgentViz';
+import { GATE_CHAIN, liveGateCall } from '../../lib/liveFrames';
 
 type Kind = 'read' | 'plan' | 'act';
 
 const KIND_STYLE: Record<Kind, string> = {
     read: 'bg-live/15 text-live border-live/40',
-    plan: 'bg-info/15 text-info border-info/40',
+    plan: 'bg-stream/15 text-stream border-stream/40',
     act: 'bg-warning/15 text-warning border-warning/40',
 };
 
@@ -57,6 +61,39 @@ export function Ros2McpPage() {
                 { label: 'Implemented', value: 'No — design only' },
             ]}
         >
+            <Panel title="The argument, in three claims">
+                <p className="text-body text-textMuted leading-relaxed max-w-3xl mb-5">
+                    Connecting a model to a robot is a solved piece of engineering: MCP over stdio, a tool
+                    schema, a day's work. What is not solved is <em>which tools go in the schema</em> — and
+                    that list is the entire boundary. Anything in it, the model can eventually be talked into
+                    calling. Anything outside it, no amount of talking reaches. Everything below is a proposal
+                    for where to draw that line on the robot this console already drives.
+                </p>
+
+                <ol className="grid md:grid-cols-3 gap-4 list-none p-0 m-0">
+                    {[
+                        {
+                            n: 'The safety layer must not be callable',
+                            d: 'The E-Stop latch and the 500 ms velocity deadman have no tool, no schema and no name a tool call can reference. A safety layer the model can address is one it can be talked into addressing.',
+                        },
+                        {
+                            n: 'Withheld is not the same as denied',
+                            d: 'The four capabilities at the bottom of this page are absent from the schema rather than refused by the gate. A refusal is a decision that can be mis-made; an absence is not a decision at all.',
+                        },
+                        {
+                            n: 'Weight the surface towards stopping',
+                            d: 'Seven tools: three read, one plans without publishing, and of the three that act, two are ways to halt. The calls that are safe to get wrong outnumber the ones that are not.',
+                        },
+                    ].map((c, i) => (
+                        <li key={c.n} className="rounded-xl border border-border/60 bg-card/60 p-4">
+                            <span className="text-meta font-mono font-bold text-live">{i + 1}</span>
+                            <h3 className="text-body font-bold text-text mt-1 mb-1.5">{c.n}</h3>
+                            <p className="text-body text-textMuted leading-relaxed m-0">{c.d}</p>
+                        </li>
+                    ))}
+                </ol>
+            </Panel>
+
             <Panel title="Where the gate sits">
                 <Figure
                     title="Model to robot, with the safety layer underneath"
@@ -76,6 +113,56 @@ export function Ros2McpPage() {
                         floor="E-Stop latch · cmd_vel deadman · speed ceiling"
                     />
                 </Figure>
+            </Panel>
+
+            <LivePanel
+                hz={2}
+                rateLabel="one hop per frame"
+                caveat="A walkthrough of the design on this page, not a recording of anything. There is no MCP server, no model and no gate — the sequence is a pure function of the frame index, so pausing and stepping replays it exactly."
+                readout={tick => {
+                    const { call, stepIndex, step } = liveGateCall(tick);
+                    return (
+                        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 m-0">
+                            {[
+                                { k: 'Tool', v: call.tool, bad: false },
+                                { k: 'Tier', v: call.tier, bad: call.tier === 'not exposed' },
+                                { k: 'Stage', v: GATE_CHAIN[step.stage], bad: false },
+                                { k: 'Verdict', v: step.status, bad: step.status === 'refused' || step.status === 'hold' },
+                            ].map(x => (
+                                <div key={x.k}
+                                    className={`rounded-xl border px-4 py-3 ${x.bad ? 'border-warning/40 bg-warning/5' : 'border-border/60 bg-card/60'}`}>
+                                    <dt className="text-meta font-mono uppercase tracking-widest text-textMuted mb-1">{x.k}</dt>
+                                    <dd className={`text-body font-mono font-bold m-0 break-words ${x.bad ? 'text-warning' : 'text-text'}`}>
+                                        {x.v}
+                                    </dd>
+                                </div>
+                            ))}
+                            <span className="sr-only">Step {stepIndex + 1}</span>
+                        </dl>
+                    );
+                }}
+            >
+                {tick => {
+                    const t = liveGateCall(tick);
+                    return (
+                        <GateTrace chain={GATE_CHAIN} call={t.call} step={t.step}
+                            reached={t.reached} callIndex={t.callIndex} total={t.total} />
+                    );
+                }}
+            </LivePanel>
+
+            <Panel title="What the five calls show">
+                <p className="text-body text-textMuted leading-relaxed max-w-3xl">
+                    The sequence above is the whole design in about fifteen seconds, which is why it is here
+                    rather than only in the tables below. A read crosses every stage unchallenged. A proposal
+                    runs the planner and stops — it returns a route and publishes nothing, so there is nothing
+                    to approve. A commit halts at the gate and waits for a person, and the question that person
+                    is asked names a place in the building rather than a function signature. The fourth call is
+                    the interesting one: <span className="font-mono">set_velocity</span> dies at the MCP server
+                    because no such tool exists, so the gate is never consulted and there is no decision to get
+                    wrong. The fifth is routed <em>around</em> the gate deliberately — a gate that can refuse a
+                    stop is a worse failure than one that lets a bad action through.
+                </p>
             </Panel>
 
             <Panel title="Tool surface">
@@ -162,6 +249,24 @@ export function Ros2McpPage() {
                         </li>
                     ))}
                 </ol>
+                <p className="text-body text-textMuted leading-relaxed mt-5 max-w-3xl">
+                    These are the questions to bring to a room rather than answer in a document. A design that
+                    names what it has not settled is easier to argue with than one that reads as finished.
+                </p>
+            </Panel>
+
+            <Panel title="The other half of this">
+                <p className="text-body text-textMuted leading-relaxed max-w-3xl">
+                    Everything on this page is mechanical: what is in the schema, what the gate does, what sits
+                    underneath and cannot be reached. It bounds the worst case and says nothing about how often
+                    the model makes a bad call inside that boundary. Reducing that rate is the job of the
+                    prompt, and it is a different kind of work with much weaker guarantees — which is covered
+                    in{' '}
+                    <Link to="/ai/prompting" className="text-live underline underline-offset-2 hover:text-liveStrong transition-colors duration-base ease-standard">
+                        Prompting robotics
+                    </Link>. Read in order, the two pages are one argument: the tool surface decides what is
+                    possible, the prompt decides what is likely, and neither of them is the safety system.
+                </p>
             </Panel>
         </AppPage>
     );

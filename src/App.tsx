@@ -14,6 +14,9 @@ import { AstraProPage } from './pages/sensors/AstraProPage';
 import { RplidarA2Page } from './pages/sensors/RplidarA2Page';
 import { ImuPage } from './pages/sensors/ImuPage';
 import { UltrasonicPage } from './pages/sensors/UltrasonicPage';
+import { SingleMotorPage } from './pages/motion/SingleMotorPage';
+import { DualMotorsPage } from './pages/motion/DualMotorsPage';
+import { MotorEncodersPage } from './pages/motion/MotorEncodersPage';
 import { LineFollowingPage } from './pages/projects/LineFollowingPage';
 import { ObjectTrackingPage } from './pages/projects/ObjectTrackingPage';
 import { HumanFollowerPage } from './pages/projects/HumanFollowerPage';
@@ -95,11 +98,16 @@ function App() {
             element={<ProtectedRoute><SectionPage /></ProtectedRoute>}
           />
 
-          {/* Robot sensors — reference pages, no hardware access */}
+          {/* Robot sensor (Perception kit) — reference pages, no hardware access */}
           <Route path="/sensors/astra-pro" element={<ProtectedRoute><AstraProPage /></ProtectedRoute>} />
           <Route path="/sensors/rplidar-a2" element={<ProtectedRoute><RplidarA2Page /></ProtectedRoute>} />
           <Route path="/sensors/imu" element={<ProtectedRoute><ImuPage /></ProtectedRoute>} />
           <Route path="/sensors/ultrasonic" element={<ProtectedRoute><UltrasonicPage /></ProtectedRoute>} />
+
+          {/* Robot sensor (Motion kit) — bench reference pages, no hardware access */}
+          <Route path="/motion/single-motor" element={<ProtectedRoute><SingleMotorPage /></ProtectedRoute>} />
+          <Route path="/motion/dual-motors" element={<ProtectedRoute><DualMotorsPage /></ProtectedRoute>} />
+          <Route path="/motion/motor-encoders" element={<ProtectedRoute><MotorEncodersPage /></ProtectedRoute>} />
 
           {/* Robotics projects — behaviour packages, bench results only */}
           <Route path="/projects/line-following" element={<ProtectedRoute><LineFollowingPage /></ProtectedRoute>} />

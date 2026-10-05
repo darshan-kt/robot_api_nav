@@ -16,6 +16,7 @@
 import {
     LayoutDashboard, OctagonX, Smartphone, Route, CircuitBoard,
     Camera, Radar, Compass, Waves,
+    Cog, Disc3, ArrowLeftRight, AudioWaveform,
     ScanLine, Crosshair, Footprints, Shield,
     Sigma, Activity, Gauge, Network, MessageSquare, Brain,
     type LucideIcon,
@@ -110,7 +111,7 @@ export const SECTIONS: SectionDef[] = [
     },
     {
         id: 'sensors',
-        title: 'Robot sensors',
+        title: 'Robot sensor (Perception kit)',
         route: '/section/sensors',
         icon: CircuitBoard,
         groups: [
@@ -147,6 +148,42 @@ export const SECTIONS: SectionDef[] = [
                         route: '/sensors/ultrasonic',
                         icon: Waves,
                         provenance: 'SPEC SHEET',
+                    },
+                ],
+            },
+        ],
+    },
+    {
+        id: 'motion',
+        title: 'Robot sensor (Motion kit)',
+        route: '/section/motion',
+        icon: Cog,
+        groups: [
+            {
+                apps: [
+                    {
+                        id: 'single-motor',
+                        title: 'Single motor',
+                        blurb: 'One gearmotor, open loop. Where the duty-cycle deadband is and why it heats the winding.',
+                        route: '/motion/single-motor',
+                        icon: Disc3,
+                        provenance: 'BENCH RESULTS',
+                    },
+                    {
+                        id: 'dual-motors',
+                        title: 'Dual motors',
+                        blurb: 'Differential drive from two of the same part, and the arc that equal duty actually produces.',
+                        route: '/motion/dual-motors',
+                        icon: ArrowLeftRight,
+                        provenance: 'BENCH RESULTS',
+                    },
+                    {
+                        id: 'motor-encoders',
+                        title: 'Motor with encoders',
+                        blurb: 'Quadrature feedback closing the velocity loop — and earning the right to publish /odom.',
+                        route: '/motion/motor-encoders',
+                        icon: AudioWaveform,
+                        provenance: 'BENCH RESULTS',
                     },
                 ],
             },

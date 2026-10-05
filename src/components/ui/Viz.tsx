@@ -468,10 +468,10 @@ export function GatedArchitecture({ chain, floor }: { chain: string[]; floor: st
                 return (
                     <g key={name}>
                         <rect x={x} y={20} width={BOX_W} height={BOX_H} rx={8}
-                            className={gate ? 'fill-warning/15 stroke-warning' : 'fill-media-fg/5 stroke-media-live/40'}
+                            className={gate ? 'fill-media-warn/15 stroke-media-warn' : 'fill-media-fg/5 stroke-media-live/40'}
                             strokeWidth={gate ? 1.5 : 1} />
                         <foreignObject x={x + 6} y={26} width={BOX_W - 12} height={BOX_H - 12}>
-                            <div className={`text-meta leading-tight text-center font-mono font-bold ${gate ? 'text-warning' : 'text-media-fg'}`}>
+                            <div className={`text-meta leading-tight text-center font-mono font-bold ${gate ? 'text-media-warn' : 'text-media-fg'}`}>
                                 {name}
                             </div>
                         </foreignObject>
@@ -486,17 +486,17 @@ export function GatedArchitecture({ chain, floor }: { chain: string[]; floor: st
                 );
             })}
 
-            <text x={W / 2} y={12} textAnchor="middle" className="fill-media-fg/45 font-mono" fontSize={12}>
+            <text x={W / 2} y={12} textAnchor="middle" className="fill-media-fg/55 font-mono" fontSize={12}>
                 every arrow above can fail
             </text>
 
             <rect x={PAD} y={100} width={W - PAD * 2} height={56} rx={8}
-                className="fill-fault/10 stroke-fault" strokeWidth={1.5} strokeDasharray="6 3" />
-            <text x={W / 2} y={124} textAnchor="middle" className="fill-fault font-mono font-bold" fontSize={12}>{floor}</text>
-            <text x={W / 2} y={145} textAnchor="middle" className="fill-fault/70 font-mono" fontSize={12}>
+                className="fill-media-fault/10 stroke-media-fault" strokeWidth={1.5} strokeDasharray="6 3" />
+            <text x={W / 2} y={124} textAnchor="middle" className="fill-media-fault font-mono font-bold" fontSize={12}>{floor}</text>
+            <text x={W / 2} y={145} textAnchor="middle" className="fill-media-fault/80 font-mono" fontSize={12}>
                 below the model · not reachable by any tool call
             </text>
-            <text x={W / 2} y={177} textAnchor="middle" className="fill-media-fg/45 font-mono" fontSize={12}>
+            <text x={W / 2} y={177} textAnchor="middle" className="fill-media-fg/55 font-mono" fontSize={12}>
                 the band below must not
             </text>
         </svg>

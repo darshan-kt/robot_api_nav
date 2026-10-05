@@ -21,6 +21,7 @@ export function LivePanel({
     children,
     readout,
     quiet = false,
+    caveat,
 }: {
     hz: number;
     /** What the real sensor's rate would be, e.g. "10 rev/s". */
@@ -31,6 +32,10 @@ export function LivePanel({
     /** Suppress the simulation caveat when the host page already states it —
      *  the reduced-motion hint still shows, because that one is actionable. */
     quiet?: boolean;
+    /** Replace the default caveat where "synthesised from the sensor model on
+     *  this page" is the wrong sentence — a design draft has no sensor model.
+     *  Omitted, the wording is unchanged. */
+    caveat?: ReactNode;
 }) {
     const { tick, running, setRunning, step, reduced } = useLiveTick(hz);
 
@@ -89,7 +94,8 @@ export function LivePanel({
                 <p className="text-body text-textMuted leading-relaxed mt-3">
                     {reduced
                         ? 'Your system asks for reduced motion, so this starts paused. Press play to run it, or step through a frame at a time.'
-                        : 'Synthesised from the sensor model on this page — no robot is attached to this console and nothing here reads hardware. Frames are a pure function of the frame index, so pausing and stepping replays exactly the same sequence.'}
+                        : caveat
+                            ?? 'Synthesised from the sensor model on this page — no robot is attached to this console and nothing here reads hardware. Frames are a pure function of the frame index, so pausing and stepping replays exactly the same sequence.'}
                 </p>
             )}
         </section>
